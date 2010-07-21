@@ -1,0 +1,4 @@
+Here are the changed files in GRASS / GDAL. Everything in the alg directory and the GNUmakefile are the changed files in GDAL. The files are for GRASS and, as of this writing, are non-existent. The GNUmakefiles for GDAL are currently hardcoded to compile for OpenCL on Mac OS X. Those who know the 'correct' way to write a config script and/or makefile, feel free to submit something that works better.
+~Seth
+
+seth@pricepages.org
