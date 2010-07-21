@@ -1813,10 +1813,6 @@ static int GWKCubicResampleNoMasksByte( GDALWarpKernel *poWK, int iBand,
     int     i;
     GByte   *pabySrcImage = poWK->papabySrcImage[iBand];
     
-//    if(iBand == 0)
-//        printf("(%5d, %5d) (%10f, %10f) (%10f, %10f)\n",
-//               iSrcX, iSrcY, dfSrcX, dfSrcY, dfDeltaX, dfDeltaY);
-    
     // Get the bilinear interpolation at the image borders
     if ( iSrcX - 1 < 0 || iSrcX + 2 >= poWK->nSrcXSize
          || iSrcY - 1 < 0 || iSrcY + 2 >= poWK->nSrcYSize )
@@ -1832,16 +1828,6 @@ static int GWKCubicResampleNoMasksByte( GDALWarpKernel *poWK, int iBand,
                             (double)pabySrcImage[iOffset],
                             (double)pabySrcImage[iOffset + 1],
                             (double)pabySrcImage[iOffset + 2]);
-        
-        /*
-        printf("(%3d %3d %3d %3d) (%10f, %10f, %10f, %10f) (%10f)\n", 
-               iBand, iSrcX, iSrcY, i, 
-               (double)pabySrcImage[iOffset - 1],
-               (double)pabySrcImage[iOffset],
-               (double)pabySrcImage[iOffset + 1],
-               (double)pabySrcImage[iOffset + 2],
-               adfValue[i + 1]);
-        //*/
     }
 
     double dfValue = CubicConvolution(dfDeltaY, dfDeltaY2, dfDeltaY3,
@@ -1853,10 +1839,6 @@ static int GWKCubicResampleNoMasksByte( GDALWarpKernel *poWK, int iBand,
         *pbValue = 255;
     else
         *pbValue = (GByte)(0.5 + dfValue);
-    
-    printf("(%3d %3d %3d) (%10f)\n",
-        iBand, iSrcX, iSrcY,
-        dfValue);
     
     return TRUE;
 }
