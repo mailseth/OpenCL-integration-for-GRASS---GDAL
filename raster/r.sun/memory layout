@@ -1,0 +1,157 @@
+Per thread:
+	SunGeometryConstDay.lum_C11
+	SunGeometryConstDay.lum_C13
+	SunGeometryConstDay.lum_C22
+	SunGeometryConstDay.lum_C31
+	SunGeometryConstDay.lum_C33
+	SunGeometryConstDay.sunrise_time
+	SunGeometryConstDay.sunset_time
+	SunGeometryConstDay.timeAngle
+	SunGeometryVarDay.isShadow
+	SunGeometryVarDay.z_orig
+	SunGeometryVarDay.zmax
+	SunGeometryVarDay.zp
+	SunGeometryVarDay.solarAltitude
+	SunGeometryVarDay.sinSolarAltitude
+	SunGeometryVarDay.tanSolarAltitude
+	SunGeometryVarDay.solarAzimuth
+	SunGeometryVarDay.sunAzimuthAngle
+	SunGeometryVarDay.stepsinangle
+	SunGeometryVarDay.stepcosangle
+	coslatsq
+	
+	
+	
+	
+	
+	
+	
+	
+	SunGeometryVarSlope.longit_l
+	SunGeometryVarSlope.lum_C31_l
+	SunGeometryVarSlope.lum_C33_l
+	SunGeometryVarSlope.aspect
+
+
+
+
+
+
+	GridGeometry.xp
+	GridGeometry.yp
+	GridGeometry.xx0
+	GridGeometry.yy0
+	GridGeometry.xg0
+	GridGeometry.yg0
+	GridGeometry.sinlat
+	GridGeometry.coslat
+
+Constants F:
+c	invScale
+c	pihalf
+c	pi2
+c	deg2rad
+c	rad2deg
+c	invstepx
+c	invstepy
+c	xmin
+c	ymin
+c	xmax
+c	ymax
+c	civilTime
+c	step
+c	horizonStep
+c	GridGeometry.stepx
+c	GridGeometry.stepy
+c	GridGeometry.deltx
+c	GridGeometry.delty
+c	GridGeometry.stepxy
+c	horizonInterval
+c	singleLinke
+c	singleAlbedo
+c	singleSlope
+c	singleAspect
+c	cbh
+c	cdh
+c	dist
+c	TOLER
+c	offsetx = 0.5
+c	offsety = 0.5
+//c	albedo_max
+//c	albedo_min
+//c	lat_max
+//c	lat_min
+c	offsetx
+c	offsety
+c	declination
+c	SolarRadVar.G_norm_extra
+c	timeOffset
+c	SunGeometryConstDay.sindecl
+c	SunGeometryConstDay.cosdecl
+
+Constants I:
+c	n
+c	m
+c	saveMemory
+c	civilTimeFlag
+c	day
+c	ttime
+c	numPartitions
+c	arrayNumInt
+c	tim
+c	G_projection()
+c	someRadiation
+c	numRows
+c	numThreads
+c	ll_correction
+c	aspin
+c	slopein
+c	linkein
+c	albedo
+c	latin
+c	longin
+c	coefbh
+c	coefdh
+c	incidout
+c	beam_rad
+c	insol_time
+c	diff_rad
+c	refl_rad
+c	glob_rad
+c	useShadowFlag
+c	useHorizonDataFlag
+
+Input grid:
+horizonpointer
+z
+o
+s
+li
+a
+latitudeArray
+longitudeArray
+cbhr
+cdhr
+
+Output grid:
+lumcl
+beam
+globrad
+insol
+diff
+refl
+
+Output vars:
+c	linke_max
+c	linke_min
+c	albedo_max
+c	albedo_min
+c	lat_max
+c	lat_min
+
+
+Oddities:
+- The way 'length' is passed around between lumcline2(), searching(), and where_is_point()
+- Extra vars kept in where_is_point(): sx & sy are converted to i & j
+- Remove reference to cube() in lumcline2(), it's an empty function
+- com_par() & lumcline2() seems to be called from several places in the code, perhaps multiple times. Needed?
