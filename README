@@ -1,4 +1,6 @@
-Here are the changed files in GRASS / GDAL. Everything in the alg directory and the GNUmakefile are the changed files in GDAL. The other files are for GRASS and, as of this writing, are non-existent. The GNUmakefiles for GDAL are currently hardcoded to compile for OpenCL on Mac OS X. Those who know the 'correct' way to write a config script and/or makefile, feel free to submit something that works better.
+Here are the changed files in GRASS / GDAL. Everything in the alg directory and the GNUmakefile are the changed files in GDAL. The GNUmakefiles for GDAL are currently hardcoded to compile for OpenCL on Mac OS X. Those who know the 'correct' way to write a config script and/or makefile, feel free to submit something that works better.
+
+The other files in the 'raster' directory are for GRASS's r.sun module. The aren't even in a compilable state, so they're there simply for your viewing pleasure. Hopefully we'll figure a way around the pj_do_proj() function and we can get them working.
 ~Seth
 
 seth@pricepages.org
