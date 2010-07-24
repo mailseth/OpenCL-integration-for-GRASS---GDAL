@@ -2031,7 +2031,7 @@ static int GWKResample( GDALWarpKernel *poWK, int iBand,
     // Mark as needing calculation (don't calculate the weights yet,
     // because a mask may render it unnecessary)
     memset( panCalcX, FALSE, nXDist * sizeof(char) );
-
+               
     // Loop over pixel rows in the kernel
     for ( j = nFiltInitY; j <= nYRadius; ++j )
     {
@@ -2757,7 +2757,7 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
                 double dfBandDensity = 0.0;
                 double dfValueReal = 0.0;
                 double dfValueImag = 0.0;
-
+                
 /* -------------------------------------------------------------------- */
 /*      Collect the source value.                                       */
 /* -------------------------------------------------------------------- */

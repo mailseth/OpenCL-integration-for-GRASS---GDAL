@@ -339,8 +339,8 @@ cl_device_id get_device()
     
     // Find the GPU CL device, this is what we really want
     // If there is no GPU device is CL capable, fall back to CPU
-//err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+//    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
     if (err != CL_SUCCESS)
     {
         // Find the CPU CL device, as a fallback
@@ -594,17 +594,10 @@ cl_kernel get_kernel(struct oclWarper *warper,
         "fDstImag = 0.0f;\n"
         
 "#ifdef USE_VEC\n"
-        "if (fDensity.x < 0.0001f && fDensity.y < 0.0001f &&\n"
-            "fDensity.z < 0.0001f && fDensity.w < 0.0001f )\n"
-            "return;\n"
-        
         "fDstReal = vload4(iDstOffset*4, dstReal);\n"
         "if (useImag)\n"
             "fDstImag = vload4(iDstOffset*4, dstImag);\n"
 "#else\n"
-        "if (fDensity < 0.0001f)\n"
-            "return;\n"
-        
         "fDstReal = dstReal[iDstOffset];\n"
         "if (useImag)\n"
             "fDstImag = dstImag[iDstOffset];\n"
@@ -620,6 +613,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
         
         "float fDstInfluence = (1.0f - fDensity) * fDstDensity;\n"
         
+        // Density should be checked for <= 0.0 & handled by the calling function
         "fReal = (fReal * fDensity + fDstReal * fDstInfluence) / (fDensity + fDstInfluence);\n"
         "if (useImag)\n"
             "fImag = (fImag * fDensity + fDstImag * fDstInfluence) / (fDensity + fDstInfluence);\n"
@@ -643,7 +637,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "if (useImag)\n"
         "clampToDst(fImag, dstImag, iDstOffset, fDstNoDataReal, -1);\n"
 "#endif\n"
-    "}\n"
+"}\n"
 
 "int getPixel(read_only image2d_t srcReal,\n"
              "read_only image2d_t srcImag,\n"
@@ -662,40 +656,27 @@ cl_kernel get_kernel(struct oclWarper *warper,
     
     "if (useUnifiedSrcValid &&\n"
         "!((nUnifiedSrcValid[iSrcOffset>>5] & (0x01 << (iSrcOffset & 0x1f))) ) )\n"
-    "{\n"
-        "*fDensity = 0.0f;\n"
         "return FALSE;\n"
-    "}\n"
     
 "#ifdef USE_VEC\n"
-    "if (useBandSrcValid[bandNum] &&\n"
-        "!((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*bandNum    ] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
-        "(*fDensity).x = 0.0f;\n"
-    "else\n"
+    "if (!useUseBandSrcValid || !useBandSrcValid[bandNum] ||\n"
+        "((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*bandNum    ] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
         "bHasValid = TRUE;\n"
     
-    "if (useBandSrcValid[bandNum+1] &&\n"
-        "!((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*(1+bandNum)] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
-        "(*fDensity).y = 0.0f;\n"
-    "else\n"
+    "if (!useUseBandSrcValid || !useBandSrcValid[bandNum+1] ||\n"
+        "((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*(1+bandNum)] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
         "bHasValid = TRUE;\n"
     
-    "if (useBandSrcValid[bandNum+2] &&\n"
-        "!((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*(2+bandNum)] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
-        "(*fDensity).z = 0.0f;\n"
-    "else\n"
+    "if (!useUseBandSrcValid || !useBandSrcValid[bandNum+2] ||\n"
+        "((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*(2+bandNum)] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
         "bHasValid = TRUE;\n"
     
-    "if (useBandSrcValid[bandNum+3] &&\n"
-        "!((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*(3+bandNum)] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
-        "(*fDensity).w = 0.0f;\n"
-    "else\n"
+    "if (!useUseBandSrcValid || !useBandSrcValid[bandNum+3] ||\n"
+        "((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*(3+bandNum)] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
         "bHasValid = TRUE;\n"
 "#else\n"
-    "if (useBandSrcValid[bandNum] &&\n"
-        "!((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*bandNum    ] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
-        "(*fDensity) = 0.0f;\n"
-    "else\n"
+    "if (!useUseBandSrcValid || !useBandSrcValid[bandNum] ||\n"
+        "((nBandSrcValid[(iSrcOffset>>5)+iBandValidLen*bandNum    ] & (0x01 << (iSrcOffset & 0x1f)))) )\n"
         "bHasValid = TRUE;\n"
 "#endif\n"
     
@@ -724,10 +705,10 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "}\n"
     
 "#ifdef USE_VEC\n"
-    "return  (*fDensity).x != 0.0f || (*fDensity).y != 0.0f ||\n"
-            "(*fDensity).z != 0.0f || (*fDensity).w != 0.0f;\n"
+    "return  (*fDensity).x > 0.0f || (*fDensity).y > 0.0f ||\n"
+            "(*fDensity).z > 0.0f || (*fDensity).w > 0.0f;\n"
 "#else\n"
-    "return *fDensity != 0.0f;\n"
+    "return (*fDensity) > 0.0f;\n"
 "#endif\n"
 "}\n"
 
@@ -810,9 +791,10 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "if (!isValid(fUnifiedSrcDensity, nUnifiedSrcValid, fSrc))\n"
         "return;\n"
     
-    "int2    iSrc = (int2)(floor(fSrc.x - 0.5f), floor(fSrc.y - 0.5f));\n"
-    "float   fDeltaX = fSrc.x - 0.5f - (float)iSrc.x;\n"
-    "float   fDeltaY = fSrc.y - 0.5f - (float)iSrc.y;\n"
+    "int     iSrcX = (int) floor( fSrc.x - 0.5f );\n"
+    "int     iSrcY = (int) floor( fSrc.y - 0.5f );\n"
+    "float   fDeltaX = fSrc.x - 0.5f - (float)iSrcX;\n"
+    "float   fDeltaY = fSrc.y - 0.5f - (float)iSrcY;\n"
     "float   fDeltaX2 = fDeltaX * fDeltaX;\n"
     "float   fDeltaY2 = fDeltaY * fDeltaY;\n"
     "float   fDeltaX3 = fDeltaX2 * fDeltaX;\n"
@@ -830,19 +812,19 @@ cl_kernel get_kernel(struct oclWarper *warper,
         
         //Get all the pixels for this row
         "getPixel(srcReal, srcImag, fUnifiedSrcDensity, nUnifiedSrcValid,\n"
-                 "useBandSrcValid, nBandSrcValid, (int2)(iSrc.x-1, iSrc.y+i),\n"
+                 "useBandSrcValid, nBandSrcValid, (int2)(iSrcX-1, iSrcY+i),\n"
                  "bandNum, &fDens1, &fReal1, &fImag1);\n"
         
         "getPixel(srcReal, srcImag, fUnifiedSrcDensity, nUnifiedSrcValid,\n"
-                 "useBandSrcValid, nBandSrcValid, (int2)(iSrc.x  , iSrc.y+i),\n"
+                 "useBandSrcValid, nBandSrcValid, (int2)(iSrcX  , iSrcY+i),\n"
                  "bandNum, &fDens2, &fReal2, &fImag2);\n"
         
         "getPixel(srcReal, srcImag, fUnifiedSrcDensity, nUnifiedSrcValid,\n"
-                 "useBandSrcValid, nBandSrcValid, (int2)(iSrc.x+1, iSrc.y+i),\n"
+                 "useBandSrcValid, nBandSrcValid, (int2)(iSrcX+1, iSrcY+i),\n"
                  "bandNum, &fDens3, &fReal3, &fImag3);\n"
         
         "getPixel(srcReal, srcImag, fUnifiedSrcDensity, nUnifiedSrcValid,\n"
-                 "useBandSrcValid, nBandSrcValid, (int2)(iSrc.x+2, iSrc.y+i),\n"
+                 "useBandSrcValid, nBandSrcValid, (int2)(iSrcX+2, iSrcY+i),\n"
                  "bandNum, &fDens4, &fReal4, &fImag4);\n"
    
         // Process this row
@@ -911,8 +893,8 @@ cl_kernel get_kernel(struct oclWarper *warper,
                      "__constant int *nDstValid,\n"
                      "const int bandNum)\n"
 "{\n"
-    "float2  fDst = (float2)(((float)get_global_id(0))/((float)iDstWidth),\n"
-                            "((float)get_global_id(1))/((float)iDstHeight));\n"
+    "float2  fDst = (float2)((0.5f+get_global_id(0))/((float)iDstWidth),\n"
+                            "(0.5f+get_global_id(1))/((float)iDstHeight));\n"
     
     //"Check & return when the thread group overruns the image size\n"
     "if (fDst.x >= 1.0f || fDst.y >= 1.0f)\n"
@@ -942,7 +924,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
         // "Skip sampling over edge of image\n"
         "if ( iSrc.y < 0 || iSrc.y >= iSrcHeight )\n"
             "continue;\n"
-        
+    
         // "Select the resampling algorithm\n"
         "if ( doCubicSpline )\n"
             // "Calculate the Y weight\n"
@@ -955,40 +937,46 @@ cl_kernel get_kernel(struct oclWarper *warper,
                 "lanczosSinc(j - fDeltaY, fYFilter);\n"
         
         // "Iterate over pixels in row\n"
-        "for (i = nFiltInitX; i <= nXRadius; ++i )\n"
+        "for ( i = nFiltInitX; i <= nXRadius; ++i )\n"
         "{\n"
             "float fWeight2;\n"
-            "vecf fDensity, fReal, fImag;\n"
+            "vecf fDensity = 0.0f, fReal = 0.0f, fImag = 0.0f;\n"
             "iSrc.x = iSrcX + i;\n"
             
-            // "Skip sampling at edge of image\n"
-            "if ( iSrc.x < 0 || iSrc.x >= iSrcWidth )\n"
+            // Skip sampling at edge of image
+            // Skip sampling when invalid pixel
+            "if ( iSrc.x < 0 || iSrc.x >= iSrcWidth || \n"
+                  "!getPixel(srcReal, srcImag, fUnifiedSrcDensity,\n"
+                            "nUnifiedSrcValid, useBandSrcValid, nBandSrcValid,\n"
+                            "iSrc, bandNum, &fDensity, &fReal, &fImag) )\n"
                 "continue;\n"
-            
-            "getPixel(srcReal, srcImag, fUnifiedSrcDensity,\n"
-                     "nUnifiedSrcValid, useBandSrcValid, nBandSrcValid,\n"
-                     "iSrc, bandNum, &fDensity, &fReal, &fImag);\n"
-            
-            // "Choose among possible algorithms\n"
+    
+            // Choose among possible algorithms
             "if ( doCubicSpline )\n"
-                // "Calculate & save the X weight\n"
-                "fWeight2 = fWeight1 * (fXScale < 1.0f ) ?\n"
+                // Calculate & save the X weight
+                "fWeight2 = fWeight1 * ((fXScale < 1.0f ) ?\n"
                     "bSpline((float)i * fXScale) * fXScale :\n"
-                    "bSpline(fDeltaX - (float)i);\n"
+                    "bSpline(fDeltaX - (float)i));\n"
             "else\n"
-                // "Calculate & save the X weight\n"
-                "fWeight2 = fWeight1 * (fXScale < 1.0f ) ?\n"
+                // Calculate & save the X weight
+                "fWeight2 = fWeight1 * ((fXScale < 1.0f ) ?\n"
                     "lanczosSinc(i * fXScale, fXFilter) * fXScale :\n"
-                    "lanczosSinc(i - fDeltaX, fXFilter);\n"
+                    "lanczosSinc(i - fDeltaX, fXFilter));\n"
             
-            // "Accumulate!\n"
+            // Accumulate!
             "fAccumulatorReal += fReal * fWeight2;\n"
             "fAccumulatorImag += fImag * fWeight2;\n"
             "fAccumulatorDensity += fDensity * fWeight2;\n"
             "fAccumulatorWeight += fWeight2;\n"
         "}\n"
     "}\n"
-    
+
+    /* FIXME: make this work with vector data. It'll look something like this:
+    "#ifdef USE_VEC\n"
+    "if (fDensity.x < 0.0001f && fDensity.y < 0.0001f &&\n"
+    "fDensity.z < 0.0001f && fDensity.w < 0.0001f )\n"
+    "return;\n"
+    */
     "if ( fAccumulatorWeight < 0.000001f || fAccumulatorDensity < 0.000001f )\n"
     "{\n"
         "setPixel(dstReal, dstImag, dstDensity, nDstValid, fDstNoDataReal, bandNum,\n"
@@ -1007,9 +995,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
                  "fAccumulatorDensity / fAccumulatorWeight,\n"
                  "fAccumulatorReal / fAccumulatorWeight,\n"
                  "fFinImag);\n"
-    "}\n"
-    "else\n"
-    "{\n"
+    "} else {\n"
         "setPixel(dstReal, dstImag, dstDensity, nDstValid, fDstNoDataReal, bandNum,\n"
                  "fAccumulatorDensity,\n"
                  "fAccumulatorReal,\n"
@@ -1070,14 +1056,16 @@ cl_kernel get_kernel(struct oclWarper *warper,
             "-D fXScale=%ff -D fYScale=%ff -D fXFilter=%ff -D fYFilter=%ff "
             "-D nXRadius=%d -D nYRadius=%d -D nFiltInitX=%d -D nFiltInitY=%d "
             "-D PI=%ff -D outType=%s -D dstMinVal=%ff -D dstMaxVal=%ff "
-            "-D useDstNoDataReal=%d %s -D doCubicSpline=%d ",
+            "-D useDstNoDataReal=%d %s -D doCubicSpline=%d "
+            "-D useUseBandSrcValid=%d",
             warper->srcWidth, warper->srcHeight, warper->dstWidth, warper->dstHeight,
             warper->useUnifiedSrcDensity, warper->useUnifiedSrcValid,
             warper->useDstDensity, warper->useDstValid, warper->imagWorkCL != NULL,
             dfXScale, dfYScale, dfXFilter, dfYFilter,
             nXRadius, nYRadius, nFiltInitX, nFiltInitY,
             M_PI, outType, dstMinVal, dstMaxVal,
-            warper->fDstNoDataRealCL != NULL, useVec, warper->resampAlg == OCL_CubicSpline);
+            warper->fDstNoDataRealCL != NULL, useVec, warper->resampAlg == OCL_CubicSpline,
+            warper->nBandSrcValidCL != NULL);
     
     (*clErr) = clBuildProgram(program, 1, &(warper->dev), buffer, NULL, NULL);
     
@@ -1203,6 +1191,19 @@ cl_int set_unified_data(struct oclWarper *warper,
         handleErr(err);
     }
     
+    // Set the band validity usage
+    if(useValid) {
+        (*useBandSrcValidCL) = clCreateBuffer(warper->context,
+                                              CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                              sizeof(char) * warper->numBands,
+                                              warper->useBandSrcValid, &err);
+        handleErr(err);
+    } else {
+        //Make a fake image so we don't have a NULL pointer
+        (*useBandSrcValidCL) = clCreateBuffer(warper->context, CL_MEM_READ_ONLY, 1, NULL, &err);
+        handleErr(err);
+    }
+    
     //Do a more thorough check for validity
     if (useValid) {
         int i;
@@ -1217,12 +1218,6 @@ cl_int set_unified_data(struct oclWarper *warper,
         //32 bits in the mask
         int stride = 1 + (warper->srcWidth * warper->srcHeight >> 5);
         
-        (*useBandSrcValidCL) = clCreateBuffer(warper->context,
-                                              CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                                              sizeof(char) * warper->numBands,
-                                              warper->useBandSrcValid, &err);
-        handleErr(err);
-        
         (*nBandSrcValidCL) = clCreateBuffer(warper->context,
                                             CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                             sizeof(int) * warper->numBands * stride,
@@ -1230,8 +1225,6 @@ cl_int set_unified_data(struct oclWarper *warper,
         handleErr(err);
     } else {
         //Make a fake image so we don't have a NULL pointer
-        (*useBandSrcValidCL) = clCreateBuffer(warper->context, CL_MEM_READ_ONLY, 1, NULL, &err);
-        handleErr(err);
         (*nBandSrcValidCL) = clCreateBuffer(warper->context, CL_MEM_READ_ONLY, 1, NULL, &err);
         handleErr(err);
     }
@@ -1466,13 +1459,15 @@ cl_int execute_kern(struct oclWarper *warper, size_t loc_size)
     size_t end_time;
 #endif
     
-    //Use a likely X-dimension which is a power of 2
-    if(loc_size >= 512)
+    // Use a likely X-dimension which is a power of 2
+    if (loc_size >= 512)
         group_size[0] = 32;
-    else if(loc_size >= 64)
+    else if (loc_size >= 64)
         group_size[0] = 16;
-    else
+    else if (loc_size > 1)
         group_size[0] = 8;
+    else
+        group_size[0] = 1;
     
     if(group_size[0] > loc_size)
         group_size[1] = group_size[0]/loc_size;
@@ -1707,8 +1702,8 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
     
     warper->imagWorkCL = NULL;
     warper->dstImagWorkCL = NULL;
-    warper->useBandSrcValid = NULL;
     warper->useBandSrcValidCL = NULL;
+    warper->useBandSrcValid = NULL;
     warper->nBandSrcValidCL = NULL;
     warper->nBandSrcValid = NULL;
     warper->fDstNoDataRealCL = NULL;
@@ -1743,7 +1738,7 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
         handleErrRetNULL(err);
         
         for (i = 0; i < warper->numBands; ++i)
-            warper->useBandSrcValid = FALSE;
+            warper->useBandSrcValid[i] = FALSE;
         
         //Allocate one array for all the band validity masks
         //Remember that the masks don't use much memeory (they're bitwise)
