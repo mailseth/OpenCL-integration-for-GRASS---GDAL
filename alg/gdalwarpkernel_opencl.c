@@ -1105,11 +1105,11 @@ cl_kernel get_kernel(struct oclWarper *warper,
             M_PI, outType, dstMinVal, dstMaxVal,
             warper->fDstNoDataRealCL != NULL, useVec, warper->resampAlg == OCL_CubicSpline,
             warper->nBandSrcValidCL != NULL);
-    printf("%s\n", buffer);
-    (*clErr) = clBuildProgram(program, 1, &(warper->dev), buffer, NULL, NULL);
+
+    (*clErr) = err = clBuildProgram(program, 1, &(warper->dev), buffer, NULL, NULL);
     
     //Detailed debugging info
-    if ((*clErr) != CL_SUCCESS)
+    if (err != CL_SUCCESS)
     {
         err = clGetProgramBuildInfo(program, warper->dev, CL_PROGRAM_BUILD_LOG,
                                     128000*sizeof(char), buffer, NULL);
@@ -1919,12 +1919,11 @@ cl_int GDALWarpKernelOpenCL_setCoordRow(struct oclWarper *warper,
             xyPtr[0] = rowSrcX[i] - srcXOff;
             xyPtr[1] = rowSrcY[i] - srcYOff;
         } else {
-            xyPtr[0] = -99.0;
-            xyPtr[1] = -99.0;
+            xyPtr[0] = -99.0f;
+            xyPtr[1] = -99.0f;
         }
         xyPtr += xyChSize;
     }
-    
     return CL_SUCCESS;
 }
 

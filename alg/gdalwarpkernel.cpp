@@ -2326,6 +2326,8 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
     int iDstY, iBand;
     int nDstXSize = poWK->nDstXSize, nDstYSize = poWK->nDstYSize;
     int nSrcXSize = poWK->nSrcXSize, nSrcYSize = poWK->nSrcYSize;
+    int nDstXOff  = poWK->nDstXOff , nDstYOff  = poWK->nDstYOff;
+    int nSrcXOff  = poWK->nSrcXOff , nSrcYOff  = poWK->nSrcYOff;
     CPLErr eErr = CE_None;
     struct oclWarper *warper;
     cl_channel_type imageFormat;
@@ -2395,10 +2397,8 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
     
     CPLDebug( "GDAL", "GDALWarpKernel()::GWKGeneralCase()\n"
              "Src=%d,%d,%dx%d Dst=%d,%d,%dx%d",
-             poWK->nSrcXOff, poWK->nSrcYOff, 
-             poWK->nSrcXSize, poWK->nSrcYSize,
-             poWK->nDstXOff, poWK->nDstYOff, 
-             poWK->nDstXSize, poWK->nDstYSize );
+             nSrcXOff, nSrcYOff, nSrcXSize, nSrcYSize,
+             nDstXOff, nDstYOff, nDstXSize, nDstYSize );
     
     if( !poWK->pfnProgress( poWK->dfProgressBase, "", poWK->pProgress ) )
     {
@@ -2461,8 +2461,8 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
         /* -------------------------------------------------------------------- */
         for( iDstX = 0; iDstX < nDstXSize; iDstX++ )
         {
-            padfX[iDstX] = iDstX + 0.5 + poWK->nDstXOff;
-            padfY[iDstX] = iDstY + 0.5 + poWK->nDstYOff;
+            padfX[iDstX] = iDstX + 0.5 + nDstXOff;
+            padfY[iDstX] = iDstY + 0.5 + nDstYOff;
             padfZ[iDstX] = 0.0;
         }
         
@@ -2474,7 +2474,7 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
                              padfX, padfY, padfZ, pabSuccess );
         
         err = GDALWarpKernelOpenCL_setCoordRow(warper, padfX, padfY,
-                                               poWK->nSrcXOff, poWK->nSrcYOff,
+                                               nSrcXOff, nSrcYOff,
                                                pabSuccess, iDstY);
         
         if(err != CL_SUCCESS)
@@ -2487,16 +2487,16 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
         //Update the valid & density masks because we don't do so in the kernel
         for( iDstX = 0; iDstX < nDstXSize && eErr == CE_None; iDstX++ )
         {
+            double dfX = padfX[iDstX];
+            double dfY = padfY[iDstX];
             int iDstOffset = iDstX + iDstY * nDstXSize;
             
             //See GWKGeneralCase() for appropriate commenting
-            if( !pabSuccess[iDstX]
-               || padfX[iDstX] < poWK->nSrcXOff
-               || padfY[iDstX] < poWK->nSrcYOff )
+            if( !pabSuccess[iDstX] || dfX < nSrcXOff || dfY < nSrcYOff )
                 continue;
             
-            int iSrcX = ((int) padfX[iDstX]) - poWK->nSrcXOff;
-            int iSrcY = ((int) padfY[iDstX]) - poWK->nSrcYOff;
+            int iSrcX = ((int) dfX) - nSrcXOff;
+            int iSrcY = ((int) dfY) - nSrcYOff;
             
             if( iSrcX < 0 || iSrcX >= nSrcXSize || iSrcY < 0 || iSrcY >= nSrcYSize )
                 continue;
@@ -2628,16 +2628,16 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
     int iDstY;
     int nDstXSize = poWK->nDstXSize, nDstYSize = poWK->nDstYSize;
     int nSrcXSize = poWK->nSrcXSize, nSrcYSize = poWK->nSrcYSize;
+    int nDstXOff  = poWK->nDstXOff , nDstYOff  = poWK->nDstYOff;
+    int nSrcXOff  = poWK->nSrcXOff , nSrcYOff  = poWK->nSrcYOff;
     CPLErr eErr = CE_None;
     
     printf("Original Code!\n");
     
     CPLDebug( "GDAL", "GDALWarpKernel()::GWKGeneralCase()\n"
               "Src=%d,%d,%dx%d Dst=%d,%d,%dx%d",
-              poWK->nSrcXOff, poWK->nSrcYOff, 
-              poWK->nSrcXSize, poWK->nSrcYSize,
-              poWK->nDstXOff, poWK->nDstYOff, 
-              poWK->nDstXSize, poWK->nDstYSize );
+              nSrcXOff, nSrcYOff, nSrcXSize, nSrcYSize,
+              nDstXOff, nDstYOff, nDstXSize, nDstYSize );
 
     if( !poWK->pfnProgress( poWK->dfProgressBase, "", poWK->pProgress ) )
     {
@@ -2676,8 +2676,8 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
 /* -------------------------------------------------------------------- */
         for( iDstX = 0; iDstX < nDstXSize; iDstX++ )
         {
-            padfX[iDstX] = iDstX + 0.5 + poWK->nDstXOff;
-            padfY[iDstX] = iDstY + 0.5 + poWK->nDstYOff;
+            padfX[iDstX] = iDstX + 0.5 + nDstXOff;
+            padfY[iDstX] = iDstY + 0.5 + nDstYOff;
             padfZ[iDstX] = 0.0;
         }
 
@@ -2693,6 +2693,8 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
 /* ==================================================================== */
         for( iDstX = 0; iDstX < nDstXSize; iDstX++ )
         {
+            double dfX = padfX[iDstX];
+            double dfY = padfY[iDstX];
             int iDstOffset;
 
             if( !pabSuccess[iDstX] )
@@ -2705,14 +2707,13 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
             // We test against the value before casting to avoid the
             // problem of asymmetric truncation effects around zero.  That is
             // -0.5 will be 0 when cast to an int. 
-            if( padfX[iDstX] < poWK->nSrcXOff
-                || padfY[iDstX] < poWK->nSrcYOff )
+            if( dfX < nSrcXOff || dfY < nSrcYOff )
                 continue;
 
             int iSrcX, iSrcY, iSrcOffset;
 
-            iSrcX = ((int) padfX[iDstX]) - poWK->nSrcXOff;
-            iSrcY = ((int) padfY[iDstX]) - poWK->nSrcYOff;
+            iSrcX = ((int) dfX) - nSrcXOff;
+            iSrcY = ((int) dfY) - nSrcYOff;
 
             // If operating outside natural projection area, padfX/Y can be
             // a very huge positive number, that becomes -2147483648 in the
@@ -2770,16 +2771,16 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
                 else if ( poWK->eResample == GRA_Bilinear )
                 {
                     GWKBilinearResample( poWK, iBand, 
-                                         padfX[iDstX]-poWK->nSrcXOff,
-                                         padfY[iDstX]-poWK->nSrcYOff,
+                                         dfX - nSrcXOff,
+                                         dfY - nSrcYOff,
                                          &dfBandDensity, 
                                          &dfValueReal, &dfValueImag );
                 }
                 else if ( poWK->eResample == GRA_Cubic )
                 {
                     GWKCubicResample( poWK, iBand, 
-                                      padfX[iDstX]-poWK->nSrcXOff,
-                                      padfY[iDstX]-poWK->nSrcYOff,
+                                      dfX - nSrcXOff,
+                                      dfY - nSrcYOff,
                                       &dfBandDensity, 
                                       &dfValueReal, &dfValueImag );
                 }
@@ -2787,8 +2788,8 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
                           || poWK->eResample == GRA_Lanczos )
                 {
                     GWKResample( poWK, iBand, 
-                                 padfX[iDstX]-poWK->nSrcXOff,
-                                 padfY[iDstX]-poWK->nSrcYOff,
+                                 dfX - nSrcXOff,
+                                 dfY - nSrcYOff,
                                  &dfBandDensity, 
                                  &dfValueReal, &dfValueImag, psWrkStruct );
                 }
@@ -2805,9 +2806,7 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
 /*      the destination pixel.                                          */
 /* -------------------------------------------------------------------- */
                 GWKSetPixelValue( poWK, iBand, iDstOffset,
-                                  dfBandDensity,
-                                  dfValueReal, dfValueImag );
-
+                                  dfBandDensity, dfValueReal, dfValueImag );
             }
 
             if (!bHasFoundDensity)
