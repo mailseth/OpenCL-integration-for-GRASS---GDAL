@@ -573,7 +573,8 @@ CPLErr GDALWarpKernel::PerformWarp()
         || eWorkingDataType == GDT_Int16
         || eWorkingDataType == GDT_CFloat32
         || eWorkingDataType == GDT_Float32) &&
-       (eResample == GRA_Cubic
+       (eResample == GRA_Bilinear
+        || eResample == GRA_Cubic
         || eResample == GRA_CubicSpline
         || eResample == GRA_Lanczos))
         return GWKGeneralOpenCLCase( this );
@@ -2362,6 +2363,9 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
     
     switch (poWK->eResample)
     {
+        case GRA_Bilinear:
+            resampAlg = OCL_Bilinear;
+            break;
         case GRA_Cubic:
             resampAlg = OCL_Cubic;
             break;
@@ -2629,7 +2633,7 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
     int nSrcXOff  = poWK->nSrcXOff , nSrcYOff  = poWK->nSrcYOff;
     CPLErr eErr = CE_None;
     
-    printf("Original Code!\n");
+    printf("Original General Case Code!\n");
     
     CPLDebug( "GDAL", "GDALWarpKernel()::GWKGeneralCase()\n"
               "Src=%d,%d,%dx%d Dst=%d,%d,%dx%d",
@@ -2693,8 +2697,6 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
             double dfX = padfX[iDstX];
             double dfY = padfY[iDstX];
             int iDstOffset;
-            
-            printf("(%4d %4d) (%10f %10f)\n", iDstX, iDstY, dfX, dfY);
             
             if( !pabSuccess[iDstX] )
                 continue;

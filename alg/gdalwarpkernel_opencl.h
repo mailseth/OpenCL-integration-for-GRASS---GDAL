@@ -5,9 +5,10 @@ extern "C" {
 #endif
 
 typedef enum {
-    OCL_Cubic=10,
-    OCL_CubicSpline=11,
-    OCL_Lanczos=12
+    OCL_Bilinear=10,
+    OCL_Cubic=11,
+    OCL_CubicSpline=12,
+    OCL_Lanczos=13
 } OCLResampAlg;
     
 struct oclWarper {
