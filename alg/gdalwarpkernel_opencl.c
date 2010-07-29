@@ -959,16 +959,20 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "float   fDeltaY3 = fDeltaY2 * fDeltaY;\n"
     "vecf    afReal[4], afDens[4];\n"
 "#if useImag != 0\n"
-    "vecf afImag[4];\n"
+    "vecf    afImag[4];\n"
+"#else\n"
+    "vecf    fImag1 = 0.0f, fImag2 = 0.0f, fImag3 = 0.0f, fImag4 = 0.0f;\n"
 "#endif\n"
     
     // Loop over rows
     "for (i = -1; i < 3; ++i)\n"
     "{\n"
         "vecf    fReal1 = 0.0f, fReal2 = 0.0f, fReal3 = 0.0f, fReal4 = 0.0f;\n"
-        "vecf    fImag1 = 0.0f, fImag2 = 0.0f, fImag3 = 0.0f, fImag4 = 0.0f;\n"
         "vecf    fDens1 = 0.0f, fDens2 = 0.0f, fDens3 = 0.0f, fDens4 = 0.0f;\n"
-        "int hasPx;"
+        "int hasPx;\n"
+"#if useImag != 0\n"
+        "vecf    fImag1 = 0.0f, fImag2 = 0.0f, fImag3 = 0.0f, fImag4 = 0.0f;\n"
+"#endif\n"
         
         //Get all the pixels for this row
         "hasPx  = getPixel(srcReal, srcImag, fUnifiedSrcDensity, nUnifiedSrcValid,\n"
@@ -990,29 +994,35 @@ cl_kernel get_kernel(struct oclWarper *warper,
         // Shortcut if no px
         "if (!hasPx) {\n"
             "afReal[i+1] = 0.0f;\n"
+"#if useImag != 0\n"
             "afImag[i+1] = 0.0f;\n"
+"#endif\n"
             "afDens[i+1] = 0.0f;\n"
             "continue;\n"
         "}\n"
         
         // Process this row
         "afReal[i+1] = cubicConvolution(fDeltaX, fDeltaX2, fDeltaX3, fReal1, fReal2, fReal3, fReal4);\n"
-        "if (useImag)\n"
+"#if useImag != 0\n"
             "afImag[i+1] = cubicConvolution(fDeltaX, fDeltaX2, fDeltaX3, fImag1, fImag2, fImag3, fImag4);\n"
+"#endif\n"
         "afDens[i+1] = cubicConvolution(fDeltaX, fDeltaX2, fDeltaX3, fDens1, fDens2, fDens3, fDens4);\n"
     "}\n"
     
     "vecf fFinImag;\n"
-    "if (useImag)\n"
+"#if useImag != 0\n"
         "fFinImag = cubicConvolution(fDeltaY, fDeltaY2, fDeltaY3, afImag[0], afImag[1], afImag[2], afImag[3]);\n"
-    "else\n"
-        "fFinImag = 0.0f;\n"
+"#endif\n"
     
     // Compute and save final pixel
     "setPixel(dstReal, dstImag, dstDensity, nDstValid, fDstNoDataReal, bandNum,\n"
              "cubicConvolution(fDeltaY, fDeltaY2, fDeltaY3, afDens[0], afDens[1], afDens[2], afDens[3]),\n"
              "cubicConvolution(fDeltaY, fDeltaY2, fDeltaY3, afReal[0], afReal[1], afReal[2], afReal[3]),\n"
+"#if useImag != 0\n"
              "fFinImag );\n"
+"#else\n"
+             "fImag1 );\n"
+"#endif\n"
 "}\n";
 
     const char *kernResampler =
