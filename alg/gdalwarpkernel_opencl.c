@@ -1908,6 +1908,14 @@ cl_int GDALWarpKernelOpenCL_setDstImg(struct oclWarper *warper, void *imgData,
  minus the offset. By using image memory, we can use a smaller texture for
  coordinates and use OpenCL's built-in interpolation to save memory.
  
+ What it does: generates a smaller matrix of X/Y coordinate transformation
+ values from an original matrix. When bilinearly sampled in the GPU hardware,
+ the generated values are as close as possible to the original matrix.
+ 
+ Complication: matricies have arbitrary dimensions and the sub-sampling factor
+ is an arbitrary integer greater than zero. Getting the edge cases right is 
+ difficult.
+ 
  Returns CL_SUCCESS on success and other CL_* errors when something goes wrong.
  */
 cl_int GDALWarpKernelOpenCL_setCoordRow(struct oclWarper *warper,
