@@ -83,6 +83,10 @@ struct oclWarper {
     cl_mem xyWorkCL;
     float *xyWork;
     
+    int xyWidth;
+    int xyHeight;
+    int coordMult;
+    
     unsigned int xyChSize;
     cl_channel_order xyChOrder;
     
@@ -92,7 +96,8 @@ struct oclWarper {
 
 struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
                                                  int dstWidth, int dstHeight,
-                                                 cl_channel_type imageFormat, int numBands,
+                                                 cl_channel_type imageFormat,
+                                                 int numBands, int coordMult,
                                                  int useImag, int useBandSrcValid,
                                                  float *fDstDensity,
                                                  double *dfDstNoDataReal,

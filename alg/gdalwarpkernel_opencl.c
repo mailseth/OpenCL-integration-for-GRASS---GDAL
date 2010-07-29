@@ -464,7 +464,7 @@ cl_int alloc_pinned_mem(struct oclWarper *warper, int imgNum, size_t dataSz,
     } else {
         wrkCL[imgNum] = NULL;
 #ifndef NDEBUG
-        printf("Using fallback memory!\n");
+        printf("Using fallback non-pinned memory!\n");
 #endif
         //Fallback to regular allocation
         wrkPtr[imgNum] = (void *)CPLMalloc(dataSz);
@@ -781,20 +781,33 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "return TRUE;\n"
 "}\n"
 
-"float2 getSrcCoords(__read_only image2d_t srcCoords,\n"
-                    "float2 fDst)\n"
+"float2 getSrcCoords(__read_only image2d_t srcCoords)\n"
 "{\n"
+    // Find an appropriate place to sample the coordinates so we're still
+    // accurate after linear interpolation.
+    "int nDstX = get_global_id(0);\n"
+    "int nDstY = get_global_id(1);\n"
+    "float xyStepX = ceil((iDstWidth  - 1) / (float)iCoordMult) + 1.0f;\n"
+    "float xyStepY = ceil((iDstHeight - 1) / (float)iCoordMult) + 1.0f;\n"
+    
+    "float2  fDst = (float2)(0.5f / xyStepX + nDstX / (xyStepX * iCoordMult), \n"
+                            "0.5f / xyStepY + nDstY / (xyStepY * iCoordMult));\n"
+    
+    // Check & return when the thread group overruns the image size
+    "if (nDstX >= iDstWidth || nDstY >= iDstHeight)\n"
+        "return (float2)(-99.0, -99.0);\n"
+    
     "float4  fSrcCoords = read_imagef(srcCoords,\n"
                                      "CLK_NORMALIZED_COORDS_TRUE |\n"
-                                     "CLK_ADDRESS_CLAMP_TO_EDGE |\n"
-                                     "CLK_FILTER_LINEAR,\n"
+                                        "CLK_ADDRESS_CLAMP_TO_EDGE |\n"
+                                        "CLK_FILTER_LINEAR,\n"
                                      "fDst);\n"
     
     "return (float2)(fSrcCoords.x, fSrcCoords.y);\n"
 "}\n";
 
     const char *kernCubic =
-// "************************ Cubic ************************\n"
+// ************************ Cubic ************************
 "vecf cubicConvolution(float dist1, float dist2, float dist3,\n"
                        "vecf f0, vecf f1, vecf f2, vecf f3)\n"
 "{\n"
@@ -820,14 +833,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
                      "const int bandNum)\n"
 "{\n"
     "int i;\n"
-    "float2  fDst = (float2)((0.5f+get_global_id(0))/((float)iDstWidth),\n"
-                            "(0.5f+get_global_id(1))/((float)iDstHeight));\n"
-    
-    // Check & return when the thread group overruns the image size
-    "if (fDst.x > 1.0f || fDst.y > 1.0f)\n"
-        "return;\n"
-    
-    "float2  fSrc = getSrcCoords(srcCoords, fDst);\n"
+    "float2  fSrc = getSrcCoords(srcCoords);\n"
     
     "if (!isValid(fUnifiedSrcDensity, nUnifiedSrcValid, fSrc))\n"
         "return;\n"
@@ -887,7 +893,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
 "}\n";
 
     const char *kernResampler =
-// "************************ LanczosSinc ************************\n"
+// ************************ LanczosSinc ************************
 
 "float lanczosSinc( float dfX, float dfR )\n"
 "{\n"
@@ -900,7 +906,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "return ( sin(dfPIX) / dfPIX ) * ( sin(dfPIX / dfR) * dfR / dfPIX );\n"
 "}\n"
 
-// "************************ Bicubic Spline ************************\n"
+// ************************ Bicubic Spline ************************
 
 "float bSpline( float x )\n"
 "{\n"
@@ -916,7 +922,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
              "xp2c:0.0f) ) * 0.166666666666666666666f;\n"
 "}\n"
 
-// "************************ General Resampler ************************\n"
+// ************************ General Resampler ************************
 
 "__kernel void resamp(__read_only image2d_t srcCoords,\n"
                      "__read_only image2d_t srcReal,\n"
@@ -932,14 +938,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
                      "__global int *nDstValid,\n"
                      "const int bandNum)\n"
 "{\n"
-    "float2  fDst = (float2)((0.5f+get_global_id(0))/((float)iDstWidth),\n"
-                            "(0.5f+get_global_id(1))/((float)iDstHeight));\n"
-    
-    //"Check & return when the thread group overruns the image size\n"
-    "if (fDst.x >= 1.0f || fDst.y >= 1.0f)\n"
-        "return;\n"
-    
-    "float2  fSrc = getSrcCoords(srcCoords, fDst);\n"
+    "float2  fSrc = getSrcCoords(srcCoords);\n"
     
     "if (!isValid(fUnifiedSrcDensity, nUnifiedSrcValid, fSrc))\n"
         "return;\n"
@@ -954,19 +953,19 @@ cl_kernel get_kernel(struct oclWarper *warper,
     "float fAccumulatorWeight = 0.0f;\n"
     "int   i, j;\n"
 
-     // "Loop over pixel rows in the kernel\n"
+     // Loop over pixel rows in the kernel
     "for ( j = nFiltInitY; j <= nYRadius; ++j )\n"
     "{\n"
         "float   fWeight1;\n"
         "int2 iSrc = (int2)(0, iSrcY + j);\n"
         
-        // "Skip sampling over edge of image\n"
+        // Skip sampling over edge of image
         "if ( iSrc.y < 0 || iSrc.y >= iSrcHeight )\n"
             "continue;\n"
     
-        // "Select the resampling algorithm\n"
+        // Select the resampling algorithm
         "if ( doCubicSpline )\n"
-            // "Calculate the Y weight\n"
+            // Calculate the Y weight
             "fWeight1 = ( fYScale < 1.0f ) ?\n"
                 "bSpline(((float)j) * fYScale) * fYScale :\n"
                 "bSpline(((float)j) - fDeltaY);\n"
@@ -975,7 +974,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
                 "lanczosSinc(j * fYScale, fYFilter) * fYScale :\n"
                 "lanczosSinc(j - fDeltaY, fYFilter);\n"
         
-        // "Iterate over pixels in row\n"
+        // Iterate over pixels in row
         "for ( i = nFiltInitX; i <= nXRadius; ++i )\n"
         "{\n"
             "float fWeight2;\n"
@@ -1021,7 +1020,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
         "setPixel(dstReal, dstImag, dstDensity, nDstValid, fDstNoDataReal, bandNum,\n"
                  "0.0f, 0.0f, 0.0f);\n"
     "}\n"
-    // "Calculate the output taking into account weighting\n"
+    // Calculate the output taking into account weighting
     "else if ( fAccumulatorWeight < 0.99999f || fAccumulatorWeight > 1.00001f )\n"
     "{\n"
         "vecf fFinImag;\n"
@@ -1096,7 +1095,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
             "-D nXRadius=%d -D nYRadius=%d -D nFiltInitX=%d -D nFiltInitY=%d "
             "-D PI=%010ff -D outType=%s -D dstMinVal=%010ff -D dstMaxVal=%010ff "
             "-D useDstNoDataReal=%d %s -D doCubicSpline=%d "
-            "-D useUseBandSrcValid=%d",
+            "-D useUseBandSrcValid=%d -D iCoordMult=%d",
             warper->srcWidth, warper->srcHeight, warper->dstWidth, warper->dstHeight,
             warper->useUnifiedSrcDensity, warper->useUnifiedSrcValid,
             warper->useDstDensity, warper->useDstValid, warper->imagWorkCL != NULL,
@@ -1104,7 +1103,7 @@ cl_kernel get_kernel(struct oclWarper *warper,
             nXRadius, nYRadius, nFiltInitX, nFiltInitY,
             M_PI, outType, dstMinVal, dstMaxVal,
             warper->fDstNoDataRealCL != NULL, useVec, warper->resampAlg == OCL_CubicSpline,
-            warper->nBandSrcValidCL != NULL);
+            warper->nBandSrcValidCL != NULL, warper->coordMult);
 
     (*clErr) = err = clBuildProgram(program, 1, &(warper->dev), buffer, NULL, NULL);
     
@@ -1168,9 +1167,9 @@ cl_int set_coord_data (struct oclWarper *warper, cl_mem *xy)
     imgFmt.image_channel_data_type = CL_FLOAT;
     (*xy) = clCreateImage2D(warper->context,
                             CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, &imgFmt,
-                            (size_t) warper->dstWidth,
-                            (size_t) warper->dstHeight,
-                            (size_t) sizeof(float) * warper->xyChSize * warper->dstWidth,
+                            (size_t) warper->xyWidth,
+                            (size_t) warper->xyHeight,
+                            (size_t) sizeof(float) * warper->xyChSize * warper->xyWidth,
                             warper->xyWork, &err);
     handleErr(err);
     
@@ -1708,7 +1707,8 @@ cl_int set_img_data(struct oclWarper *warper, void *srcImgData,
  */
 struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
                                                  int dstWidth, int dstHeight,
-                                                 cl_channel_type imageFormat, int numBands,
+                                                 cl_channel_type imageFormat,
+                                                 int numBands, int coordMult,
                                                  int useImag, int useBandSrcValid,
                                                  float *fDstDensity,
                                                  double *dfDstNoDataReal,
@@ -1729,6 +1729,7 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
     warper->dstWidth = dstWidth;
     warper->dstHeight = dstHeight;
     
+    warper->coordMult = coordMult;
     warper->numBands = numBands;
     warper->imageFormat = imageFormat;
     warper->resampAlg = resampAlg;
@@ -1748,6 +1749,7 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
     //Make the pointer space for the real images
     warper->realWorkCL = (cl_mem *)CPLMalloc(sizeof(cl_mem)*warper->numImages);
     warper->dstRealWorkCL = (cl_mem *)CPLMalloc(sizeof(cl_mem)*warper->numImages);
+    
     if (warper->realWorkCL == NULL || warper->dstRealWorkCL == NULL)
         handleErrRetNULL(err = CL_OUT_OF_HOST_MEMORY);
     
@@ -1755,6 +1757,7 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
     if (useImag) {
         warper->imagWorkCL = (cl_mem *)CPLMalloc(sizeof(cl_mem)*warper->numImages);
         warper->dstImagWorkCL = (cl_mem *)CPLMalloc(sizeof(cl_mem)*warper->numImages);
+        
         if (warper->imagWorkCL == NULL || warper->imagWorkCL == NULL)
             handleErrRetNULL(err = CL_OUT_OF_HOST_MEMORY);
     }
@@ -1825,8 +1828,12 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
                                 CL_FLOAT);
     handleErrRetNULL(err);
     
+    //Set coordinate image dimensions
+    warper->xyWidth  = ceil(((float)warper->dstWidth  + (float)warper->coordMult-1)/(float)warper->coordMult);
+    warper->xyHeight = ceil(((float)warper->dstHeight + (float)warper->coordMult-1)/(float)warper->coordMult);
+    
     //Alloc coord memory
-    sz = sizeof(float) * warper->dstWidth * warper->dstHeight * warper->xyChSize;
+    sz = sizeof(float) * warper->xyChSize * warper->xyWidth * warper->xyHeight;
     err = alloc_pinned_mem(warper, 0, sz, (void **)&(warper->xyWork),
                            &(warper->xyWorkCL));
     handleErrRetNULL(err);
@@ -1898,9 +1905,8 @@ cl_int GDALWarpKernelOpenCL_setDstImg(struct oclWarper *warper, void *imgData,
  Inputs the source coordinates for a row of the destination pixels. Invalid
  coordinates are set as -99.0, which should be out of the image bounds. Sets
  the coordinates as ready to be used in OpenCL image memory: interleaved and
- minus the offset. By using image memory, we should be able to eventually use
- a smaller texture for coordinates and use OpenCL's built-in interpolation
- to save memory.
+ minus the offset. By using image memory, we can use a smaller texture for
+ coordinates and use OpenCL's built-in interpolation to save memory.
  
  Returns CL_SUCCESS on success and other CL_* errors when something goes wrong.
  */
@@ -1909,21 +1915,89 @@ cl_int GDALWarpKernelOpenCL_setCoordRow(struct oclWarper *warper,
                                         double srcXOff, double srcYOff,
                                         int *success, int rowNum)
 {
+    int coordMult = warper->coordMult;
+    int width = warper->dstWidth;
+    int height = warper->dstHeight;
+    int xyWidth = warper->xyWidth;
     int i;
-    int dstWidth = warper->dstWidth;
     int xyChSize = warper->xyChSize;
-    float *xyPtr = &(warper->xyWork[rowNum * dstWidth * xyChSize]);
+    float *xyPtr, *xyPrevPtr = NULL;
+    int lastRow = rowNum == height - 1;
+    double dstHeightMod = 1.0, dstWidthMod = 1.0;
     
-    for (i = 0; i < dstWidth; ++i) {
+    //Return if we're at an off row
+    if(!lastRow && rowNum % coordMult != 0)
+        return CL_SUCCESS;
+    
+    //Standard row, adjusted for the skipped rows
+    xyPtr = &(warper->xyWork[xyWidth * xyChSize * rowNum / coordMult]);
+    
+    //Find our row
+    if(lastRow){
+        //Setup for the final row
+        xyPtr     = &(warper->xyWork[xyWidth * xyChSize * (warper->xyHeight - 1)]);
+        xyPrevPtr = &(warper->xyWork[xyWidth * xyChSize * (warper->xyHeight - 2)]);
+        
+        if((height-1) % coordMult)
+            dstHeightMod = (double)coordMult / (double)((height-1) % coordMult);
+    }
+    
+    //Copy selected coordinates
+    for (i = 0; i < width; i += coordMult) {
         if (success[i]) {
             xyPtr[0] = rowSrcX[i] - srcXOff;
             xyPtr[1] = rowSrcY[i] - srcYOff;
+            
+            if(lastRow) {
+                //Adjust bottom row so interpolator returns correct value
+                xyPtr[0] = dstHeightMod * (xyPtr[0] - xyPrevPtr[0]) + xyPrevPtr[0];
+                xyPtr[1] = dstHeightMod * (xyPtr[1] - xyPrevPtr[1]) + xyPrevPtr[1];
+            }
         } else {
             xyPtr[0] = -99.0f;
             xyPtr[1] = -99.0f;
         }
+        
         xyPtr += xyChSize;
+        xyPrevPtr += xyChSize;
     }
+    
+    //Copy remaining coordinate
+    if((width-1) % coordMult){
+        dstWidthMod = (double)coordMult / (double)((width-1) % coordMult);
+        xyPtr -= xyChSize;
+        xyPrevPtr -= xyChSize;
+    } else {
+        xyPtr -= xyChSize*2;
+        xyPrevPtr -= xyChSize*2;
+    }
+    
+    if(lastRow) {
+        double origX = rowSrcX[width-1] - srcXOff;
+        double origY = rowSrcY[width-1] - srcYOff;
+        double a = 1.0, b = 1.0;
+        
+        // Calculate the needed x/y values using an equation from the OpenCL Spec
+        // section 8.2, solving for Ti1j1
+        if((width -1) % coordMult)
+            a = ((width -1) % coordMult)/(double)coordMult;
+        
+        if((height-1) % coordMult)
+            b = ((height-1) % coordMult)/(double)coordMult;
+        
+        xyPtr[xyChSize  ] = (((1.0 - a) * (1.0 - b) * xyPrevPtr[0]
+                              + a * (1.0 - b) * xyPrevPtr[xyChSize]
+                              + (1.0 - a) * b * xyPtr[0]) - origX)/(-a * b);
+        
+        xyPtr[xyChSize+1] = (((1.0 - a) * (1.0 - b) * xyPrevPtr[1]
+                              + a * (1.0 - b) * xyPrevPtr[xyChSize+1]
+                              + (1.0 - a) * b * xyPtr[1]) - origY)/(-a * b);
+    } else {
+        //Adjust last coordinate so interpolator returns correct value
+        xyPtr[xyChSize  ] = dstWidthMod * (rowSrcX[width-1] - srcXOff - xyPtr[0]) + xyPtr[0];
+        xyPtr[xyChSize+1] = dstWidthMod * (rowSrcY[width-1] - srcYOff - xyPtr[1]) + xyPtr[1];
+    }
+    
     return CL_SUCCESS;
 }
 

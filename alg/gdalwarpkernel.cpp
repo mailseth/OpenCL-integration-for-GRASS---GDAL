@@ -2335,8 +2335,6 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
     OCLResampAlg resampAlg;
     cl_int err;
     
-    printf("OpenCL case!\n");
-    
     switch ( poWK->eWorkingDataType )
     {
         case GDT_Byte:
@@ -2382,7 +2380,7 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
     
     warper = GDALWarpKernelOpenCL_createEnv(nSrcXSize, nSrcYSize,
                                             nDstXSize, nDstYSize,
-                                            imageFormat, poWK->nBands,
+                                            imageFormat, poWK->nBands, 3,
                                             useImag, poWK->papanBandSrcValid != NULL,
                                             poWK->pafDstDensity,
                                             poWK->padfDstNoDataReal,
@@ -2452,14 +2450,14 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
     /* ==================================================================== */
     /*      Loop over output lines.                                         */
     /* ==================================================================== */
-    for( iDstY = 0; iDstY < nDstYSize && eErr == CE_None; iDstY++ )
+    for( iDstY = 0; iDstY < nDstYSize && eErr == CE_None; ++iDstY )
     {
         int iDstX;
         
         /* -------------------------------------------------------------------- */
         /*      Setup points to transform to source image space.                */
         /* -------------------------------------------------------------------- */
-        for( iDstX = 0; iDstX < nDstXSize; iDstX++ )
+        for( iDstX = 0; iDstX < nDstXSize; ++iDstX )
         {
             padfX[iDstX] = iDstX + 0.5 + nDstXOff;
             padfY[iDstX] = iDstY + 0.5 + nDstYOff;
@@ -2476,7 +2474,6 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
         err = GDALWarpKernelOpenCL_setCoordRow(warper, padfX, padfY,
                                                nSrcXOff, nSrcYOff,
                                                pabSuccess, iDstY);
-        
         if(err != CL_SUCCESS)
         {
             CPLError( CE_Failure, CPLE_AppDefined, 
@@ -2696,7 +2693,9 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
             double dfX = padfX[iDstX];
             double dfY = padfY[iDstX];
             int iDstOffset;
-
+            
+            printf("(%4d %4d) (%10f %10f)\n", iDstX, iDstY, dfX, dfY);
+            
             if( !pabSuccess[iDstX] )
                 continue;
 
@@ -2771,16 +2770,14 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
                 else if ( poWK->eResample == GRA_Bilinear )
                 {
                     GWKBilinearResample( poWK, iBand, 
-                                         dfX - nSrcXOff,
-                                         dfY - nSrcYOff,
+                                         dfX - nSrcXOff, dfY - nSrcYOff,
                                          &dfBandDensity, 
                                          &dfValueReal, &dfValueImag );
                 }
                 else if ( poWK->eResample == GRA_Cubic )
                 {
                     GWKCubicResample( poWK, iBand, 
-                                      dfX - nSrcXOff,
-                                      dfY - nSrcYOff,
+                                      dfX - nSrcXOff, dfY - nSrcYOff,
                                       &dfBandDensity, 
                                       &dfValueReal, &dfValueImag );
                 }
@@ -2788,8 +2785,7 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
                           || poWK->eResample == GRA_Lanczos )
                 {
                     GWKResample( poWK, iBand, 
-                                 dfX - nSrcXOff,
-                                 dfY - nSrcYOff,
+                                 dfX - nSrcXOff, dfY - nSrcYOff,
                                  &dfBandDensity, 
                                  &dfValueReal, &dfValueImag, psWrkStruct );
                 }
