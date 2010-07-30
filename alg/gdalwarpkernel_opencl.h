@@ -14,8 +14,9 @@ typedef enum {
 struct oclWarper {
     cl_command_queue queue;
     cl_context context;
-    cl_kernel kern;
     cl_device_id dev;
+    cl_kernel kern1;
+    cl_kernel kern4;
     
     int srcWidth;
     int srcHeight;
@@ -72,9 +73,12 @@ struct oclWarper {
         float **f;
     } dstImagWork;
     
-    unsigned int imgChSize;
-    cl_channel_order imgChOrder;
-	
+    unsigned int imgChSize1;
+    cl_channel_order imgChOrder1;
+    unsigned int imgChSize4;
+    cl_channel_order imgChOrder4;
+	char    useVec;
+    
     cl_mem useBandSrcValidCL;
     char *useBandSrcValid;
     
