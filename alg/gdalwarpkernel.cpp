@@ -566,7 +566,7 @@ CPLErr GDALWarpKernel::PerformWarp()
 /* -------------------------------------------------------------------- */
 /*      Set up resampling functions.                                    */
 /* -------------------------------------------------------------------- */
-	/*
+	//*
     if((eWorkingDataType == GDT_Byte
         || eWorkingDataType == GDT_CInt16
         || eWorkingDataType == GDT_UInt16
@@ -640,7 +640,6 @@ CPLErr GDALWarpKernel::PerformWarp()
         && pafDstDensity == NULL )
         return GWKCubicNoMasksShort( this );
     
-//    printf("(%10f %10f) (%10f)\n", dfSrcX, dfSrcY, dfAccumulatorReal);
     if( (eWorkingDataType == GDT_Int16 )
         && eResample == GRA_CubicSpline
         && papanBandSrcValid == NULL
