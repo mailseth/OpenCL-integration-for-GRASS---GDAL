@@ -836,11 +836,10 @@ cl_kernel get_kernel(struct oclWarper *warper, char useVec,
     // accurate after linear interpolation.
     "int nDstX = get_global_id(0);\n"
     "int nDstY = get_global_id(1);\n"
-    "float xyStepX = ceil((iDstWidth  - 1) / (float)iCoordMult) + 1.0f;\n"
-    "float xyStepY = ceil((iDstHeight - 1) / (float)iCoordMult) + 1.0f;\n"
-    
-    "float2  fDst = (float2)(0.5f / xyStepX + nDstX / (xyStepX * iCoordMult), \n"
-                            "0.5f / xyStepY + nDstY / (xyStepY * iCoordMult));\n"
+    "float2  fDst = (float2)((0.5f * (float)iCoordMult + nDstX) /\n"
+                                "(float)((ceil((iDstWidth  - 1) / (float)iCoordMult) + 1) * iCoordMult), \n"
+                            "(0.5f * (float)iCoordMult + nDstY) /\n"
+                                "(float)((ceil((iDstHeight - 1) / (float)iCoordMult) + 1) * iCoordMult));\n"
     
     // Check & return when the thread group overruns the image size
     "if (nDstX >= iDstWidth || nDstY >= iDstHeight)\n"
@@ -1085,15 +1084,15 @@ cl_kernel get_kernel(struct oclWarper *warper, char useVec,
     const char *kernResampler =
 // ************************ LanczosSinc ************************
 
-"float lanczosSinc( float dfX, float dfR )\n"
+"float lanczosSinc( float fX, float fR )\n"
 "{\n"
-    "if ( dfX > dfR || dfX < -dfR)\n"
+    "if ( fX > fR || fX < -fR)\n"
         "return 0.0f;\n"
-    "if ( dfX == 0.0f )\n"
+    "if ( fX == 0.0f )\n"
         "return 1.0f;\n"
     
-    "float dfPIX = PI * dfX;\n"
-    "return ( sin(dfPIX) / dfPIX ) * ( sin(dfPIX / dfR) * dfR / dfPIX );\n"
+    "float fPIX = PI * fX;\n"
+    "return ( sin(fPIX) / fPIX ) * ( sin(fPIX / fR) * fR / fPIX );\n"
 "}\n"
 
 // ************************ Bicubic Spline ************************
@@ -1133,8 +1132,8 @@ cl_kernel get_kernel(struct oclWarper *warper, char useVec,
     "if (!isValid(fUnifiedSrcDensity, nUnifiedSrcValid, fSrc))\n"
         "return;\n"
     
-    "int     iSrcX = (int) floor( fSrc.x - 0.5f );\n"
-    "int     iSrcY = (int) floor( fSrc.y - 0.5f );\n"
+    "int     iSrcX = floor( fSrc.x - 0.5f );\n"
+    "int     iSrcY = floor( fSrc.y - 0.5f );\n"
     "float   fDeltaX = fSrc.x - 0.5f - (float)iSrcX;\n"
     "float   fDeltaY = fSrc.y - 0.5f - (float)iSrcY;\n"
     
@@ -1143,7 +1142,7 @@ cl_kernel get_kernel(struct oclWarper *warper, char useVec,
     "float fAccumulatorWeight = 0.0f;\n"
     "int   i, j;\n"
 
-     // Loop over pixel rows in the kernel
+    // Loop over pixel rows in the kernel
     "for ( j = nFiltInitY; j <= nYRadius; ++j )\n"
     "{\n"
         "float   fWeight1;\n"
@@ -1953,6 +1952,7 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
 {
     struct oclWarper *warper;
     int i;
+	size_t maxWidth = 0, maxHeight = 0;
 	cl_int err = CL_SUCCESS;
     size_t fmtSize, sz;
     
@@ -1981,6 +1981,25 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
     warper->fDstNoDataReal = NULL;
     warper->kern1 = NULL;
     warper->kern4 = NULL;
+    
+    //Setup the OpenCL environment
+    warper->dev = get_device();
+    warper->context = clCreateContext(0, 1, &(warper->dev), NULL, NULL, &err);
+    handleErrRetNULL(err);
+    warper->queue = clCreateCommandQueue(warper->context, warper->dev, 0, &err);
+    handleErrRetNULL(err);
+    
+    //Ensure that we hand handle imagery of these dimensions
+	err = clGetDeviceInfo(warper->dev, CL_DEVICE_IMAGE2D_MAX_WIDTH, sizeof(size_t), &maxWidth, &sz);
+    handleErrRetNULL(err);
+    err = clGetDeviceInfo(warper->dev, CL_DEVICE_IMAGE2D_MAX_HEIGHT, sizeof(size_t), &maxHeight, &sz);
+    handleErrRetNULL(err);
+	if (maxWidth < srcWidth || maxHeight < srcHeight) {
+        handleErrRetNULL(err = CL_INVALID_IMAGE_SIZE);
+    }
+    
+    
+    
     
     // Split bands into sets of four when possible
     // Cubic runs slower as vector, so don't use it (probably register pressure)
@@ -2040,13 +2059,6 @@ struct oclWarper* GDALWarpKernelOpenCL_createEnv(int srcWidth, int srcHeight,
         for (i = 0; i < warper->numBands; ++i)
             warper->fDstNoDataReal[i] = dfDstNoDataReal[i];
     }
-    
-    //Setup the OpenCL environment
-    warper->dev = get_device();
-    warper->context = clCreateContext(0, 1, &(warper->dev), NULL, NULL, &err);
-    handleErrRetNULL(err);
-    warper->queue = clCreateCommandQueue(warper->context, warper->dev, 0, &err);
-    handleErrRetNULL(err);
     
     //Alloc working host image memory
     //We'll be copying into these buffers soon

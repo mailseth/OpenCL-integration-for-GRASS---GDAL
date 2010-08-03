@@ -566,7 +566,7 @@ CPLErr GDALWarpKernel::PerformWarp()
 /* -------------------------------------------------------------------- */
 /*      Set up resampling functions.                                    */
 /* -------------------------------------------------------------------- */
-	//*
+	/*
     if((eWorkingDataType == GDT_Byte
         || eWorkingDataType == GDT_CInt16
         || eWorkingDataType == GDT_UInt16
@@ -639,7 +639,8 @@ CPLErr GDALWarpKernel::PerformWarp()
         && panDstValid == NULL
         && pafDstDensity == NULL )
         return GWKCubicNoMasksShort( this );
-
+    
+//    printf("(%10f %10f) (%10f)\n", dfSrcX, dfSrcY, dfAccumulatorReal);
     if( (eWorkingDataType == GDT_Int16 )
         && eResample == GRA_CubicSpline
         && papanBandSrcValid == NULL
@@ -2382,9 +2383,11 @@ static CPLErr GWKGeneralOpenCLCase( GDALWarpKernel *poWK )
             return CE_Failure;
     }
     
+    // Using a factor of 2 or 4 seems to have much less rounding error than 3 on the GPU.
+    // Then the rounding error can cause strange artifacting under the right conditions.
     warper = GDALWarpKernelOpenCL_createEnv(nSrcXSize, nSrcYSize,
                                             nDstXSize, nDstYSize,
-                                            imageFormat, poWK->nBands, 3,
+                                            imageFormat, poWK->nBands, 4,
                                             useImag, poWK->papanBandSrcValid != NULL,
                                             poWK->pafDstDensity,
                                             poWK->padfDstNoDataReal,
@@ -2791,7 +2794,6 @@ static CPLErr GWKGeneralCase( GDALWarpKernel *poWK )
                                  &dfBandDensity, 
                                  &dfValueReal, &dfValueImag, psWrkStruct );
                 }
-
 
                 // If we didn't find any valid inputs skip to next band.
                 if ( dfBandDensity < 0.0000000001 )
