@@ -61,7 +61,6 @@ int device_stats(cl_device_id device_id)
     int i;
 	
 	// Report the device vendor and device name
-    // 
     cl_char vendor_name[1024] = {0};
     cl_char device_name[1024] = {0};
 	cl_char device_profile[1024] = {0};
@@ -374,8 +373,8 @@ cl_device_id get_device(cl_int *clErr)
     
     // Find the GPU CL device, this is what we really want
     // If there is no GPU device is CL capable, fall back to CPU
-    //err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
+    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+    //err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
     if (err != CL_SUCCESS) {
         // Find the CPU CL device, as a fallback
         err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
@@ -400,8 +399,6 @@ cl_device_id get_device(cl_int *clErr)
  Go ahead and execute the kernel. This handles some housekeeping stuff like the
  run dimensions. When running in debug mode, it times the kernel call and prints
  the execution time.
- 
- run_kern(cmd_queue, kern, numThreads, groupSize);
  
  Returns CL_SUCCESS on success and other CL_* errors when something goes wrong.
  */
@@ -437,39 +434,6 @@ cl_int run_kern(cl_command_queue queue, cl_kernel kern, size_t glob_size, size_t
     return CL_SUCCESS;
 }
 
-cl_int make_thread_mem_cl(cl_command_queue cmd_queue, cl_context context, cl_kernel kern,
-                          unsigned int numThreads, unsigned int locSize,
-                          cl_mem *sunGeom_cl, cl_mem *sunVarGeom_cl, cl_mem *sunSlopeGeom_cl)
-{
-    cl_int err = CL_SUCCESS;
-    unsigned int sz;
-    
-    //Allocate space for structures
-    sz = sizeof(float) * numThreads * 8;
-    (*sunGeom_cl) = clCreateBuffer(context, CL_MEM_READ_WRITE, sz, NULL, &err);
-    printf("%d %d\n", sz, numThreads);
-    handleErr(err);
-    sz = sizeof(float) * numThreads * 12;
-    (*sunVarGeom_cl) = clCreateBuffer(context, CL_MEM_READ_WRITE, sz, NULL, &err);
-    handleErr(err);
-    sz = sizeof(float) * numThreads * 4;
-    (*sunSlopeGeom_cl) = clCreateBuffer(context, CL_MEM_READ_WRITE, sz, NULL, &err);
-    handleErr(err);
-    
-    //Set up these as arguments
-    //FIXME: Best case scenario is everything is local mem instead of global, but that probably won't happen. Test, though.
-    err = clSetKernelArg(kern, 0, sizeof(cl_mem), sunGeom_cl);
-    handleErr(err);
-    err = clSetKernelArg(kern, 1, sizeof(cl_mem), sunVarGeom_cl);
-    handleErr(err);
-    err = clSetKernelArg(kern, 2, sizeof(cl_mem), sunSlopeGeom_cl);
-    handleErr(err);
-    err = clSetKernelArg(kern, 3, sizeof(float)*locSize*8, NULL);
-    handleErr(err);
-    
-    return CL_SUCCESS;
-}
-
 cl_int make_hoz_mem_cl(cl_command_queue cmd_queue, cl_context context, cl_kernel kern,
                        unsigned int numThreads, int useHoz, unsigned char *hozArr,
                        cl_mem *horizon_cl)
@@ -494,7 +458,7 @@ cl_int make_hoz_mem_cl(cl_command_queue cmd_queue, cl_context context, cl_kernel
     }
     
     //Set up these as arguments
-    err = clSetKernelArg(kern, 4, sizeof(cl_mem), horizon_cl);
+    err = clSetKernelArg(kern, 0, sizeof(cl_mem), horizon_cl);
     handleErr(err);
     
     return CL_SUCCESS;
@@ -637,9 +601,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                    "const float gridGeom_coslat,\n"
                    "const float longitTime)\n"
 "{\n"
-    "unsigned int gid = get_global_id(0);\n"
-    "unsigned int gsz = n*m;\n"
-    
     "*sunGeom_lum_C11 =  gridGeom_sinlat*cosdecl;\n"
     "*sunGeom_lum_C13 = -gridGeom_coslat*sindecl;\n"
     "*sunGeom_lum_C22 = cosdecl;\n"
@@ -756,9 +717,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float dx = ((float)(i * stepx)) - gridGeom_xg0;\n"
     "float dy = ((float)(j * stepy)) - gridGeom_yg0;\n"
     
-    "unsigned int gid = get_global_id(0);\n"
-    "unsigned int gsz = n*m;\n"
-    
     "*sunVarGeom_zp = z[j*n+i];\n"
     
     //Used to be distance()
@@ -780,8 +738,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
               "const float gridGeom_yg0,\n"
               "const float coslatsq)\n"
 "{\n"
-    "unsigned int gid = get_global_id(0);\n"
-    "unsigned int gsz = n*m;\n"
     "int success = 0;\n"
     
     "if (*sunVarGeom_zp == UNDEFZ)\n"
@@ -907,19 +863,19 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float rayl, bhc, slope, linke;\n"
     
     "if(slopein)\n"
-        "slope = singleSlope;\n"
-    "else\n"
         "slope = s[gid] * deg2rad;\n"
+    "else\n"
+        "slope = singleSlope;\n"
     
     "if(linkein)\n"
-        "linke = singleLinke;\n"
-    "else\n"
         "linke = li[gid];\n"
+    "else\n"
+        "linke = singleLinke;\n"
     
     "if(coefbh)\n"
-        "bhc = 1.0f;\n"
-    "else\n"
         "bhc = cbhr[gid];\n"
+    "else\n"
+        "bhc = 1.0f;\n"
     
     "if (opticalAirMass <= 20.0f)\n"
         "rayl = 1.0f / (6.6296f + opticalAirMass * (1.7513f + opticalAirMass *\n"
@@ -954,14 +910,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float A1, gh, fg, slope, linke;\n"
     
     "if(slopein)\n"
-        "slope = singleSlope;\n"
-    "else\n"
         "slope = s[gid] * deg2rad;\n"
+    "else\n"
+        "slope = singleSlope;\n"
     
     "if(linkein)\n"
-        "linke = singleLinke;\n"
-    "else\n"
         "linke = li[gid];\n"
+    "else\n"
+        "linke = singleLinke;\n"
     
     "float dhc;\n"
     
@@ -969,9 +925,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float A1b = 0.26463f + linke * (-0.061581f + 0.0031408f * linke);\n"
     
     "if(coefdh)\n"
-        "dhc = 1.0f;\n"
-    "else\n"
         "dhc = cdhr[gid];\n"
+    "else\n"
+        "dhc = 1.0f;\n"
     
     "if (A1b * tn < 0.0022f)\n"
         "A1 = 0.0022f / tn;\n"
@@ -995,9 +951,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "float alb;\n"
         
         "if(albedo)\n"
-            "alb = singleAlbedo;\n"
-        "else\n"
             "alb = a[gid];\n"
+        "else\n"
+            "alb = singleAlbedo;\n"
         
         "if (sunVarGeom_isShadow == 1 || sh <= 0.0f)\n"
             "fx = r_sky + fg * 0.252271f;\n"
@@ -1007,9 +963,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "else if (sunVarGeom_solarAltitude < 0.1f) {\n"
             "float a_ln = sunVarGeom_solarAzimuth - sunSlopeGeom_aspect;\n"
             
-            "if (a_ln > M_PI)\n"
+            "if (a_ln > PI)\n"
                 "a_ln -= deg2rad;\n"
-            "else if (a_ln < -M_PI)\n"
+            "else if (a_ln < -PI)\n"
                 "a_ln += deg2rad;\n"
             
             "fx = ((0.00263f - 0.712f * kb - 0.6883f * kb * kb) * fg + r_sky) *\n"
@@ -1026,10 +982,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "}\n"
 "}\n"
  
-"__kernel void calculate(__global float *sunGeom,\n"
-                       "__global float *sunVarGeom,\n"
-                       
-                       "__global float *horizonArr,\n"
+"__kernel void calculate(__global float *horizonArr,\n"
                        "__global float *z,\n"
                        "__global float *o,\n"
                        "__global float *s,\n"
@@ -1048,7 +1001,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                        "__global float *refl )\n"
 "{\n"
     "unsigned int gid = get_global_id(0);\n"
-    "unsigned int gsz = n*m;\n"
+    "unsigned int gsz = n*numRows;\n"
     "unsigned int lid = get_local_id(0);\n"
     "unsigned int lsz = get_local_size(0);\n"
     "float longitTime = 0.0f;\n"
@@ -1064,7 +1017,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     
     "gridGeom_xg0 = gridGeom_xx0 = stepx * gid / (float)m;\n"
     "gridGeom_yg0 = gridGeom_yy0 = (gid % m) * stepy;\n"
-    
     "float gridGeom_xp = xmin + gridGeom_xx0;\n"
     "float gridGeom_yp = ymin + gridGeom_yy0;\n"
     
@@ -1080,22 +1032,20 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "return;\n"
     
     "float latitude, longitude, aspect, slope;\n"
-    
     "if (latin)\n"
         "latitude = latitudeArray[gid] * deg2rad;\n"
-    
     "if (longin)\n"
         "longitude = longitudeArray[gid] * deg2rad;\n"
-    
-    "if (proj_eq_ll) {\n"		/* ll projection */
+
+    "if (proj_eq_ll) {\n"   //	ll projection
         "longitude = gridGeom_xp * deg2rad;\n"
         "latitude  = gridGeom_yp * deg2rad;\n"
     "}\n"
     
     "if (slopein)\n"
-        "slope = singleSlope;\n"
+        "slope = s[gid] * deg2rad;\n"
     "else\n"
-        "slope = s[gid];\n"
+        "slope = singleSlope;\n"
         
     "float cos_u = cos(pihalf - slope);\n"
     "float sin_u = sin(pihalf - slope);\n"
@@ -1120,7 +1070,8 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                       "&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                       "gridGeom_sinlat, gridGeom_coslat, longitTime);\n"
     
-    "float sunSlopeGeom_longit_l = atan(-cos_u * cos_v / (gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u));\n"
+    "float sunSlopeGeom_longit_l = atan(-cos_u * cos_v / "
+                    "(gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u));\n"
     "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
     "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
     
@@ -1150,11 +1101,10 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                               "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
                               "gridGeom_xg0, gridGeom_yg0, coslatsq);\n"
         
-        "if (lum > 0.0f) {\n"
+        "if (lum > 0.0f)\n"
             "lumcl[gid] = rad2deg * asin(lum);\n"
-        "} else {\n"
+        "else\n"
             "lumcl[gid] = UNDEFZ;\n"
-        "}\n"
     "}\n"
 
     "if (someRadiation) {\n"
@@ -1196,9 +1146,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                     "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
                     "gridGeom_xg0, gridGeom_yg0, coslatsq);\n"
     
-			"if (sunVarGeom[4*gsz+gid] > 0.0f) {\n"
+			"if (sunVarGeom_solarAltitude > 0.0f) {\n"
 				"float bh;\n"
-				"if (sunVarGeom[gid] < 0.5f && s0 > 0.0f) {\n"
+				"if (!sunVarGeom_isShadow && s0 > 0.0f) {\n"
 					"beam_e = brad(s, li, cbhr, &bh, sunVarGeom_z_orig,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
                             "sunSlopeGeom_aspect, s0);\n"	/* beam radiation */
@@ -1223,12 +1173,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 			"}\n"			/* solarAltitude */
 		"} else {\n"
 			/* all-day radiation */
-			"float sunrise_time = sunGeom[5*gsz+gid];\n"
-			"int srStepNo = sunrise_time / timeStep;\n"
-			"float lastAngle = (sunGeom[6*gsz+gid] - 12.0f) * HOURANGLE;\n"
+			"int srStepNo = sunGeom_sunrise_time / timeStep;\n"
+			"float lastAngle = (sunGeom_sunset_time - 12.0f) * HOURANGLE;\n"
 			"float firstTime;\n"
 			
-			"if ((sunrise_time - srStepNo * timeStep) > 0.5f * timeStep)\n"
+			"if ((sunGeom_sunrise_time - srStepNo * timeStep) > 0.5f * timeStep)\n"
 				"firstTime = (srStepNo + 1.5f) * timeStep;\n"
 			"else\n"
 				"firstTime = (srStepNo + 0.5f) * timeStep;\n"
@@ -1256,7 +1205,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     
 				"if (sunVarGeom_solarAltitude > 0.0f) {\n"
 					"float bh;\n"
-					"if (sunVarGeom[gid] < 0.5f && s0 > 0.0f) {\n"
+					"if (!sunVarGeom_isShadow && s0 > 0.0f) {\n"
 						"++insol_count;\n"
                         "beam_e += timeStep * brad(s, li, cbhr, &bh, sunVarGeom_z_orig,\n"
                                 "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
@@ -1404,8 +1353,7 @@ cl_int calculate_core_cl(int x, int y,
     
     cl_device_id dev = get_device(&err);
 
-    cl_mem  sunGeom_cl, sunVarGeom_cl, sunSlopeGeom_cl,
-            horizon_cl, z_cl, o_cl, s_cl, li_cl, a_cl, lat_cl, long_cl, cbhr_cl, cdhr_cl,
+    cl_mem  horizon_cl, z_cl, o_cl, s_cl, li_cl, a_cl, lat_cl, long_cl, cbhr_cl, cdhr_cl,
             lumcl_cl, beam_cl, globrad_cl, insol_cl, diff_cl, refl_cl;
     
     // Now create a context to perform our calculation with the specified device 
@@ -1429,36 +1377,35 @@ cl_int calculate_core_cl(int x, int y,
 #endif
     
     //Allocate and copy all the inputs
-    make_thread_mem_cl(cmd_queue, context, kern, numThreads, groupSize,
-                       &sunGeom_cl, &sunVarGeom_cl, &sunSlopeGeom_cl);
-    
     make_hoz_mem_cl(cmd_queue, context, kern, numThreads, useHorizonData(), horizonarray, &horizon_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, 1, 5, z, &z_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->aspin, 6, o, &o_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->slopein, 7, s, &s_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->linkein, 8, li, &li_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->albedo, 9, a, &a_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->latin, 10, latitudeArray, &lat_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->longin, 11, longitudeArray, &long_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->coefbh, 12, cbhr, &cbhr_cl);
-    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->coefdh, 13, cdhr, &cdhr_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, 1, 1, z, &z_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->aspin, 2, o, &o_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->slopein, 3, s, &s_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->linkein, 4, li, &li_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->albedo, 5, a, &a_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->latin, 6, latitudeArray, &lat_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->longin, 7, longitudeArray, &long_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->coefbh, 8, cbhr, &cbhr_cl);
+    make_input_raster_cl(cmd_queue, context, kern, x, y, oclConst->coefdh, 9, cdhr, &cdhr_cl);
     
     //Make space for the outputs
-    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->incidout, 14, &lumcl_cl);
-    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->beam_rad, 15, &beam_cl);
-    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->glob_rad, 16, &globrad_cl);
-    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->insol_time, 17, &insol_cl);
-    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->diff_rad, 18, &diff_cl);
-    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->refl_rad, 19, &refl_cl);
+    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->incidout, 10, &lumcl_cl);
+    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->beam_rad, 11, &beam_cl);
+    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->glob_rad, 12, &globrad_cl);
+    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->insol_time, 13, &insol_cl);
+    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->diff_rad, 14, &diff_cl);
+    make_output_raster_cl(cmd_queue, context, kern, x, y, oclConst->refl_rad, 15, &refl_cl);
     
     //Do the dirty work
-    run_kern(cmd_queue, kern, numThreads, groupSize);
+    size_t globSize;
+    if (numThreads % groupSize)
+        globSize = numThreads + groupSize - numThreads % groupSize;
+    else
+        globSize = numThreads;
+    printf("%d %d\n", (int) globSize, (int) groupSize);
+    run_kern(cmd_queue, kern, globSize, groupSize);
     
     //Release unneeded inputs
-    handleErr(err = clReleaseMemObject(sunGeom_cl));
-    handleErr(err = clReleaseMemObject(sunVarGeom_cl));
-    handleErr(err = clReleaseMemObject(sunSlopeGeom_cl));
-    
     handleErr(err = clReleaseMemObject(horizon_cl));
     handleErr(err = clReleaseMemObject(z_cl));
     handleErr(err = clReleaseMemObject(o_cl));

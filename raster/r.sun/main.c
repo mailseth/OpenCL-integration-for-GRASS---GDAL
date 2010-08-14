@@ -784,12 +784,16 @@ int INPUT_part(int offset, double *zmax)
     char shad_filename[256];
     char formatString[10];
     
-    finalRow = m - offset - m / numPartitions;
+    numRows = m / numPartitions;
+    
+    //Make sure we round up and keep true to the actual number of partitions
+    if (m % numPartitions)
+        ++numRows;
+    
+    finalRow = m - offset - numRows;
     if (finalRow < 0) {
         finalRow = 0;
     }
-    
-    numRows = m / numPartitions;
     
     cell1 = Rast_allocate_f_buf();
     
@@ -1715,6 +1719,10 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
     
     numRows = m / numPartitions;
     
+    //Make sure we round up and keep true to the actual number of partitions
+    if (m % numPartitions)
+        ++numRows;
+    
     if (useCivilTime()) {
         /* We need to calculate the deviation of the local solar time from the 
          * "local clock time". */
@@ -1731,6 +1739,8 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
     else {
         setTimeOffset(0.);
     }
+    
+    printf("n: %d m: %d numRows: %d\n", n, m, numRows);
     
     for (j = 0; j < m; j++) {
         G_percent(j, m - 1, 2);
@@ -1791,12 +1801,16 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 oclConst.glob_rad = glob_rad != NULL;
                 oclConst.degreeInMeters = DEGREEINMETERS;
                 
+//                printf("slopein: %d\n", oclConst.slopein);
+                
                 calculate_core_cl(n, numRows,
                                   &oclConst, &sunRadVar, &sunGeom, &gridGeom,
                                   horizonarray, z, o, s, li, a,
                                   latitudeArray, longitudeArray, cbhr, cdhr,
                                   &(lumcl[j]), &(beam[j]), &(insol[j]),
                                   &(diff[j]), &(refl[j]), &(globrad[j]) );
+                
+                j += numRows-1;
                 continue;
             }
         }
