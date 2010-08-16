@@ -1160,9 +1160,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "else\n"
         "sunSlopeGeom_slope = singleSlope;\n"
     /*
-    "if (gid%numRows == gid/numRows)\n"
-    "printf(\"(%10d %10d)50 %10f %10f\\n\", gid%numRows, gid/numRows,\n"
-    "latitude, longitude);\n"
+    "if (gid%n == gid/n)\n"
+    "printf(\"(%10d %10d)50 %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
+    "latitude, longitude, latitudeArray[gid], longitudeArray[gid], deg2rad);\n"
     */
     "float cos_u = cos(pihalf - sunSlopeGeom_slope);\n"
     "float sin_u = sin(pihalf - sunSlopeGeom_slope);\n"
@@ -1182,10 +1182,10 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
     "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
     /*
-    "if (gid%numRows == gid/numRows)\n"
-    "printf(\"(%10d %10d)60 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+    "if (gid%n == gid/n)\n"
+    "printf(\"(%10d %10d)60 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
     "sin_phi_l, gridGeom_sinlat, sin_v, cos_v, sunGeom_timeAngle, sunSlopeGeom_aspect, sunSlopeGeom_slope, sunSlopeGeom_lum_C33_l);\n"
-    */
+*/
     "float sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22;\n"
     "float sunGeom_lum_C31, sunGeom_lum_C33;\n"
     "float sunGeom_sunrise_time, sunGeom_sunset_time;\n"
@@ -1202,14 +1202,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     
     "int sunVarGeom_isShadow;\n"
     "float sunVarGeom_sunAzimuthAngle;\n"
-    /*
-    "if (gid%numRows == gid/numRows)\n"
-    "printf(\"(%10d %10d)70 %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+/*
+    "if (gid%n == gid/n)\n"
+    "printf(\"(%10d %10d)70 %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
     "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
     "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
     "sunGeom_sunrise_time, sunGeom_sunset_time,\n"
     "gridGeom_sinlat, gridGeom_coslat, longitTime);\n"
-    */
+*/
     "if (incidout) {\n"
         "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                 "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
@@ -1244,13 +1244,13 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 "#endif\n"
     "} else\n"
         "linke = singleLinke;\n"
-    /*
-    "if (gid%numRows == gid/numRows)\n"
-    "printf(\"(%10d %10d)80 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+/*
+    "if (gid%n == gid/n)\n"
+    "printf(\"(%10d %10d)80 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
     "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
     "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
     "latitude, longitude);\n"
-    */
+*/
     "if (someRadiation) {\n"
         //joules2() is inlined so I don't need to pass in basically *everything*
 		//Double precision so summation works better (shouldn't slow much)
@@ -1378,10 +1378,10 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 			"globrad[gid] = beam_e + diff_e + refl_e;\n"
     "}\n"
     /*
-    "if (gid%numRows == gid/numRows)\n"
-         "printf(\"(%10d %10d)99 %10f\\n\", gid%numRows, gid/numRows,\n"
+    "if (gid%n == gid/n)\n"
+         "printf(\"(%10d %10d)99 %10f\\n\", gid%n, gid/n,\n"
              "globrad[gid]);\n"
-    */
+*/
 "#ifdef USE_ATOM_FUNC\n"
     "atom_min(&(min_max[ 8]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
     "atom_max(&(min_max[ 9]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
@@ -1542,8 +1542,6 @@ cl_int calculate_core_cl(int xDim, int yDim,
 			for (j = 0; j < xDim; ++j) {
 				xCoords[j] = oclConst->xmin + j *gridGeom->stepx;
 				yCoords[j] = yCoord;
-                
-//                printf("(%10d %10d) %10f %10f\n", xCoords[j], yCoords[j]);
 			}
 			
 			//Do the conversion for the row

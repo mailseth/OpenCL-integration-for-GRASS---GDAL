@@ -1747,7 +1747,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
             shadowoffset = 0;
             sunVarGeom.zmax = zmax;
             
-            if (0) { // Use OpenCL?
+            if (1) { // Use OpenCL?
                 struct OCLConstants oclConst;
                 oclConst.invstepx = invstepx;
                 oclConst.invstepy = invstepy;
@@ -1886,11 +1886,11 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                         longitude = gridGeom.xp;
                         latitude = gridGeom.yp;
                         
-//                        printf("(%10d %10d) %10f %10f\n", longitude, latitude);
-                        
                         if (pj_do_proj(&longitude, &latitude, &iproj, &oproj) < 0) {
                             G_fatal_error("Error in pj_do_proj");
                         }
+                        
+                        printf("(%10d %10d) %10f %10f %10f\n", i, j, latitude, longitude, deg2rad);
                         
                         lat_max = AMAX1(lat_max, latitude);
                         lat_min = AMIN1(lat_min, latitude);
