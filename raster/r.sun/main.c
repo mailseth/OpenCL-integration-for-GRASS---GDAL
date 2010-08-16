@@ -868,10 +868,11 @@ int INPUT_part(int offset, double *zmax)
     
     if (longin != NULL) {
         cell7 = Rast_allocate_f_buf();
-        longitudeArray = (float **)G_malloc(sizeof(float *) * (numRows));
-        for (l = 0; l < numRows; l++)
-            longitudeArray[l] = (float *)G_malloc(sizeof(float) * (n));
-        
+		if (longitudeArray == NULL) {
+			longitudeArray = (float **)G_malloc(sizeof(float *) * (numRows));
+			for (l = 0; l < numRows; l++)
+				longitudeArray[l] = (float *)G_malloc(sizeof(float) * (n));
+		}
         fd7 = Rast_open_old(longin, "");
     }
     
@@ -1159,8 +1160,6 @@ int OUTGR(void)
         fd12 = Rast_open_fp_new(glob_rad);
     }
     
-    Rast_set_window(&cellhd);
-    
     if (m != Rast_window_rows())
         G_fatal_error("OOPS: rows changed from %d to %d", m, Rast_window_rows());
     if (n != Rast_window_cols())
@@ -1337,11 +1336,10 @@ void joules2(struct SunGeometryConstDay *sunGeom,
         dfr = step;
         
         while (ss == 1) {
-            
             com_par(sunGeom, sunVarGeom, gridGeom, latitude, longitude);
             s0 = lumcline2(sunGeom, sunVarGeom, sunSlopeGeom, gridGeom,
                            horizonpointer);
-            
+
             if (sunVarGeom->solarAltitude > 0.) {
                 
                 if ((!sunVarGeom->isShadow) && (s0 > 0.)) {
@@ -1740,8 +1738,6 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
         setTimeOffset(0.);
     }
     
-    printf("n: %d m: %d numRows: %d\n", n, m, numRows);
-    
     for (j = 0; j < m; j++) {
         G_percent(j, m - 1, 2);
         
@@ -1751,7 +1747,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
             shadowoffset = 0;
             sunVarGeom.zmax = zmax;
             
-            if(1){ // Use OpenCL?
+            if (1) { // Use OpenCL?
                 struct OCLConstants oclConst;
                 oclConst.invstepx = invstepx;
                 oclConst.invstepy = invstepy;
@@ -1776,6 +1772,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 oclConst.zmax = zmax;
                 oclConst.n = n;
                 oclConst.m = m;
+                oclConst.j = j;
                 oclConst.saveMemory = saveMemory;
                 oclConst.day = day;
                 oclConst.ttime = ttime != NULL;
@@ -1800,15 +1797,26 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 oclConst.refl_rad = refl_rad != NULL;
                 oclConst.glob_rad = glob_rad != NULL;
                 oclConst.degreeInMeters = DEGREEINMETERS;
-                
-//                printf("slopein: %d\n", oclConst.slopein);
-                
+				
                 calculate_core_cl(n, numRows,
                                   &oclConst, &sunRadVar, &sunGeom, &gridGeom,
                                   horizonarray, z, o, s, li, a,
                                   latitudeArray, longitudeArray, cbhr, cdhr,
                                   &(lumcl[j]), &(beam[j]), &(insol[j]),
                                   &(diff[j]), &(refl[j]), &(globrad[j]) );
+                
+                linke_max = AMAX1(linke_max, oclConst.linke_max);
+                linke_min = AMIN1(linke_min, oclConst.linke_min);
+                albedo_max = AMAX1(albedo_max, oclConst.albedo_max);
+                albedo_min = AMIN1(albedo_min, oclConst.albedo_min);
+                lat_max = AMAX1(lat_max, oclConst.lat_max);
+                lat_min = AMIN1(lat_min, oclConst.lat_min);
+//                lon_max = oclConst.lon_max;
+//                lon_min = oclConst.lon_min;
+                sunrise_max = AMAX1(sunrise_max, oclConst.sunrise_max);
+                sunrise_min = AMIN1(sunrise_min, oclConst.sunrise_min);
+                sunset_max = AMAX1(sunset_max, oclConst.sunset_max);
+                sunset_min = AMIN1(sunset_min, oclConst.sunset_min);
                 
                 j += numRows-1;
                 continue;
@@ -1947,7 +1955,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     }
                     else lumcl[j][i] = UNDEFZ;
                 }
-                
+
                 if (someRadiation) {
                     joules2(&sunGeom, &sunVarGeom, &sunSlopeGeom, &sunRadVar,
                             &gridGeom, horizonarray + shadowoffset, latitude,
@@ -1964,7 +1972,6 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     if (glob_rad != NULL)
                         globrad[j][i] = (float)(beam_e + diff_e + refl_e);
                 }
-                
             }			/* undefs */
             shadowoffset += arrayNumInt;
         }

@@ -219,7 +219,6 @@ void com_par(struct SunGeometryConstDay *sungeom,
     
     sunVarGeom->solarAltitude = asin(sunVarGeom->sinSolarAltitude);	/* vertical angle of the sun */
     /* sinSolarAltitude is sin(solarAltitude) */
-    
     pom = sqrt(lum_Lx*lum_Lx + lum_Ly*lum_Ly);
     
     if (fabs(pom) > EPS) {
