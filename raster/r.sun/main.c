@@ -1756,6 +1756,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 oclConst.xmax = xmax;
                 oclConst.ymax = ymax;
                 oclConst.civilTime = civilTime;
+                oclConst.tim = tim;
                 oclConst.step = step;
                 oclConst.horizonStep = horizonStep;
                 oclConst.singleLinke = singleLinke;
@@ -1777,7 +1778,6 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 oclConst.day = day;
                 oclConst.ttime = ttime != NULL;
                 oclConst.numPartitions = numPartitions;
-                oclConst.tim = tim;
                 oclConst.proj_eq_ll = G_projection() == PROJECTION_LL;
                 oclConst.someRadiation = someRadiation;
                 oclConst.numRows = numRows;
@@ -1890,8 +1890,6 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                             G_fatal_error("Error in pj_do_proj");
                         }
                         
-                        printf("(%10d %10d) %10f %10f %10f\n", i, j, latitude, longitude, deg2rad);
-                        
                         lat_max = AMAX1(lat_max, latitude);
                         lat_min = AMIN1(lat_min, latitude);
                         latitude *= deg2rad;
@@ -1906,11 +1904,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     latitude *= deg2rad;
                     longitude *= deg2rad;
                 }
-                /*
-                if (i == j)
-                printf("(%10d %10d)50 %10f %10f\n", i, j,
-                       latitude, longitude);
-                */
+
                 if (coefbh != NULL) {
                     sunRadVar.cbh = cbhr[arrayOffset][i];
                 }
@@ -1924,6 +1918,8 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 
                 if (ttime != NULL)
                     sunGeom.timeAngle = tim;
+                else
+                    sunGeom.timeAngle = 0.0;
                 
                 gridGeom.sinlat = sin(-latitude);
                 gridGeom.coslat = cos(-latitude);
@@ -1939,12 +1935,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 sunSlopeGeom.longit_l = atan(tan_lam_l);
                 sunSlopeGeom.lum_C31_l = cos(latid_l) * sunGeom.cosdecl;
                 sunSlopeGeom.lum_C33_l = sin_phi_l * sunGeom.sindecl;
-                /*
-                if (i == j)
-                printf("(%10d %10d)60 %10f %10f %10f %10f %10f %10f %10f %10f\n", i, j,
-                       sin_phi_l, gridGeom.sinlat, sin_v, cos_v, sunGeom.timeAngle,
-                       sunSlopeGeom.aspect, sunSlopeGeom.slope, sunSlopeGeom.lum_C33_l);
-                */
+                
                 if ((incidout != NULL) || someRadiation) {
                     com_par_const(longitTime, &sunGeom, &gridGeom);
                     sunrise_min = AMIN1(sunrise_min, sunGeom.sunrise_time);
@@ -1953,14 +1944,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     sunset_max = AMAX1(sunset_max, sunGeom.sunset_time);
                     
                 }
-                /*
-                if (i == j)
-                printf("(%10d %10d)70 %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f\n", i, j,
-                sunGeom.lum_C11, sunGeom.lum_C13, sunGeom.lum_C22,
-                sunGeom.lum_C31, sunGeom.lum_C33, sunGeom.timeAngle,
-                sunGeom.sunrise_time, sunGeom.sunset_time,
-                gridGeom.sinlat, gridGeom.coslat, longitTime);
-                */
+                
                 if (incidout != NULL) {
                     com_par(&sunGeom, &sunVarGeom, &gridGeom, latitude,
                             longitude);
@@ -1973,13 +1957,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     }
                     else lumcl[j][i] = UNDEFZ;
                 }
-                /*
-                if (i == j)
-                printf("(%10d %10d)80 %10f %10f %10f %10f %10f %10f %10f %10f\n", i, j,
-                sunGeom.lum_C11, sunGeom.lum_C13, sunGeom.lum_C22,
-                sunGeom.lum_C31, sunGeom.lum_C33, sunGeom.timeAngle,
-                latitude, longitude);
-                */
+                
                 if (someRadiation) {
                     joules2(&sunGeom, &sunVarGeom, &sunSlopeGeom, &sunRadVar,
                             &gridGeom, horizonarray + shadowoffset, latitude,
@@ -1996,10 +1974,6 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     if (glob_rad != NULL)
                         globrad[j][i] = (float)(beam_e + diff_e + refl_e);
                 }
-                /*
-                if (i == j)
-                    printf("(%10d %10d)99 %10f\n", i, j, globrad[j][i]);
-                 */
             }			/* undefs */
             shadowoffset += arrayNumInt;
         }

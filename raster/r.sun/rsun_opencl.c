@@ -554,7 +554,7 @@ cl_int copy_output_cl(cl_command_queue queue, cl_context context, cl_kernel kern
     handleErr(err);
     
     //Copy data to host
-    err = clEnqueueWriteBuffer(queue, clSrc, CL_TRUE, 0, sz, (void*)src_work, 0, NULL, NULL);
+    err = clEnqueueReadBuffer(queue, clSrc, CL_TRUE, 0, sz, (void*)src_work, 0, NULL, NULL);
     handleErr(err);
     
     //Copy data back to GRASS
@@ -1159,11 +1159,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "sunSlopeGeom_slope = s[gid] * deg2rad;\n"
     "else\n"
         "sunSlopeGeom_slope = singleSlope;\n"
-    /*
-    "if (gid%n == gid/n)\n"
-    "printf(\"(%10d %10d)50 %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
-    "latitude, longitude, latitudeArray[gid], longitudeArray[gid], deg2rad);\n"
-    */
+
     "float cos_u = cos(pihalf - sunSlopeGeom_slope);\n"
     "float sin_u = sin(pihalf - sunSlopeGeom_slope);\n"
     "float cos_v = cos(pihalf + sunSlopeGeom_aspect);\n"
@@ -1181,11 +1177,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                             "(gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u));\n"
     "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
     "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
-    /*
-    "if (gid%n == gid/n)\n"
-    "printf(\"(%10d %10d)60 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
-    "sin_phi_l, gridGeom_sinlat, sin_v, cos_v, sunGeom_timeAngle, sunSlopeGeom_aspect, sunSlopeGeom_slope, sunSlopeGeom_lum_C33_l);\n"
-*/
+    
     "float sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22;\n"
     "float sunGeom_lum_C31, sunGeom_lum_C33;\n"
     "float sunGeom_sunrise_time, sunGeom_sunset_time;\n"
@@ -1202,14 +1194,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     
     "int sunVarGeom_isShadow;\n"
     "float sunVarGeom_sunAzimuthAngle;\n"
-/*
-    "if (gid%n == gid/n)\n"
-    "printf(\"(%10d %10d)70 %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
-    "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
-    "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
-    "sunGeom_sunrise_time, sunGeom_sunset_time,\n"
-    "gridGeom_sinlat, gridGeom_coslat, longitTime);\n"
-*/
+
     "if (incidout) {\n"
         "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                 "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
@@ -1399,14 +1384,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     sprintf(buffer, "-cl-fast-relaxed-math -Werror -D FALSE=0 -D TRUE=1 "
             "-D invScale=%015.15lff -D pihalf=%015.15lff -D pi2=%015.15lff -D deg2rad=%015.15lff -D rad2deg=%015.15lff "
             "-D invstepx=%015.15lff -D invstepy=%015.15lff -D xmin=%015.15lff -D ymin=%015.15lff -D xmax=%015.15lff "
-            "-D ymax=%015.15lff -D civilTime=%015.15lff -D timeStep=%015.15lff -D horizonStep=%015.15lff "
+            "-D ymax=%015.15lff -D civilTime=%015.15lff -D tim=%015.15lff -D timeStep=%015.15lff -D horizonStep=%015.15lff "
             "-D stepx=%015.15lff -D stepy=%015.15lff -D deltx=%015.15lff -D delty=%015.15lff "
             "-D stepxy=%015.15lff -D horizonInterval=%015.15lff -D singleLinke=%015.15lff "
             "-D singleAlbedo=%015.15lff -D singleSlope=%015.15lff -D singleAspect=%015.15lff -D cbh=%015.15lff "
             "-D cdh=%015.15lff -D dist=%015.15lff -D TOLER=%015.15lff -D offsetx=%015.15lff -D offsety=%015.15lff "
             "-D declination=%015.15lff -D G_norm_extra=%015.15lff -D timeOffset=%015.15lff -D sindecl=%015.15lff "
             "-D cosdecl=%015.15lff -D zmax=%015.15lff -D n=%d -D m=%d -D saveMemory=%d -D civilTimeFlag=%d "
-            "-D day=%d -D ttime=%d -D numPartitions=%d -D arrayNumInt=%d -D tim=%d "
+            "-D day=%d -D ttime=%d -D numPartitions=%d -D arrayNumInt=%d "
             "-D proj_eq_ll=%d -D someRadiation=%d -D numRows=%d -D numThreads=%d "
             "-D ll_correction=%d -D aspin=%d -D slopein=%d -D linkein=%d -D albedo=%d -D latin=%d "
             "-D longin=%d -D coefbh=%d -D coefdh=%d -D incidout=%d -D beam_rad=%d "
@@ -1416,14 +1401,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             "-D MAX_INT=%d.0f -D USE_ATOM_FUNC ",
             invScale, pihalf, pi2, deg2rad, rad2deg,
             oclConst->invstepx, oclConst->invstepy, oclConst->xmin, oclConst->ymin, oclConst->xmax,
-            oclConst->ymax, oclConst->civilTime, oclConst->step, oclConst->horizonStep,
+            oclConst->ymax, oclConst->civilTime, oclConst->tim, oclConst->step, oclConst->horizonStep,
             gridGeom->stepx, gridGeom->stepy, gridGeom->deltx, gridGeom->delty,
             gridGeom->stepxy, getHorizonInterval(), oclConst->singleLinke,
             oclConst->singleAlbedo, oclConst->singleSlope, oclConst->singleAspect, oclConst->cbh,
             oclConst->cdh, oclConst->dist, oclConst->TOLER, oclConst->offsetx, oclConst->offsety,
             oclConst->declination, sunRadVar->G_norm_extra, getTimeOffset(), sungeom->sindecl,
             sungeom->cosdecl, oclConst->zmax, oclConst->n, oclConst->m, oclConst->saveMemory, useCivilTime(),
-            oclConst->day, oclConst->ttime, oclConst->numPartitions, arrayNumInt, oclConst->tim,
+            oclConst->day, oclConst->ttime, oclConst->numPartitions, arrayNumInt,
             oclConst->proj_eq_ll, oclConst->someRadiation, oclConst->numRows, numThreads,
             oclConst->ll_correction, oclConst->aspin, oclConst->slopein, oclConst->linkein, oclConst->albedo, oclConst->latin,
             oclConst->longin, oclConst->coefbh, oclConst->coefdh, oclConst->incidout, oclConst->beam_rad,
