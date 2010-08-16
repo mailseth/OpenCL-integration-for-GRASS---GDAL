@@ -1159,7 +1159,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "sunSlopeGeom_slope = s[gid] * deg2rad;\n"
     "else\n"
         "sunSlopeGeom_slope = singleSlope;\n"
-        
+    /*
+    "if (gid%numRows == gid/numRows)\n"
+    "printf(\"(%10d %10d)50 %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+    "latitude, longitude);\n"
+    */
     "float cos_u = cos(pihalf - sunSlopeGeom_slope);\n"
     "float sin_u = sin(pihalf - sunSlopeGeom_slope);\n"
     "float cos_v = cos(pihalf + sunSlopeGeom_aspect);\n"
@@ -1171,8 +1175,17 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     
     "float gridGeom_sinlat = sin(-latitude);\n"
     "float gridGeom_coslat = cos(-latitude);\n"
-    "float sin_phi_l = -gridGeom_coslat * cos_u * sin_v + gridGeom_sinlat * sin_u;\n"
     
+    "float sin_phi_l = -gridGeom_coslat * cos_u * sin_v + gridGeom_sinlat * sin_u;\n"
+    "float sunSlopeGeom_longit_l = atan(-cos_u * cos_v / "
+                            "(gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u));\n"
+    "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
+    "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
+    /*
+    "if (gid%numRows == gid/numRows)\n"
+    "printf(\"(%10d %10d)60 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+    "sin_phi_l, gridGeom_sinlat, sin_v, cos_v, sunGeom_timeAngle, sunSlopeGeom_aspect, sunSlopeGeom_slope, sunSlopeGeom_lum_C33_l);\n"
+    */
     "float sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22;\n"
     "float sunGeom_lum_C31, sunGeom_lum_C33;\n"
     "float sunGeom_sunrise_time, sunGeom_sunset_time;\n"
@@ -1183,18 +1196,20 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                       "&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                       "gridGeom_sinlat, gridGeom_coslat, longitTime);\n"
     
-    "float sunSlopeGeom_longit_l = atan(-cos_u * cos_v / "
-                    "(gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u));\n"
-    "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
-    "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
-    
     "float sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude;\n"
     "float sunVarGeom_tanSolarAltitude, sunVarGeom_solarAzimuth;\n"
     "float sunVarGeom_stepsinangle, sunVarGeom_stepcosangle;\n"
     
     "int sunVarGeom_isShadow;\n"
     "float sunVarGeom_sunAzimuthAngle;\n"
-    
+    /*
+    "if (gid%numRows == gid/numRows)\n"
+    "printf(\"(%10d %10d)70 %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+    "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
+    "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
+    "sunGeom_sunrise_time, sunGeom_sunset_time,\n"
+    "gridGeom_sinlat, gridGeom_coslat, longitTime);\n"
+    */
     "if (incidout) {\n"
         "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                 "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
@@ -1229,7 +1244,13 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 "#endif\n"
     "} else\n"
         "linke = singleLinke;\n"
-
+    /*
+    "if (gid%numRows == gid/numRows)\n"
+    "printf(\"(%10d %10d)80 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%numRows, gid/numRows,\n"
+    "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
+    "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
+    "latitude, longitude);\n"
+    */
     "if (someRadiation) {\n"
         //joules2() is inlined so I don't need to pass in basically *everything*
 		//Double precision so summation works better (shouldn't slow much)
@@ -1356,7 +1377,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 		"if(glob_rad)\n"
 			"globrad[gid] = beam_e + diff_e + refl_e;\n"
     "}\n"
-    
+    /*
+    "if (gid%numRows == gid/numRows)\n"
+         "printf(\"(%10d %10d)99 %10f\\n\", gid%numRows, gid/numRows,\n"
+             "globrad[gid]);\n"
+    */
 "#ifdef USE_ATOM_FUNC\n"
     "atom_min(&(min_max[ 8]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
     "atom_max(&(min_max[ 9]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
@@ -1479,6 +1504,11 @@ cl_int calculate_core_cl(int xDim, int yDim,
     cl_mem  horizon_cl, z_cl, o_cl, s_cl, li_cl, a_cl, lat_cl, long_cl, cbhr_cl, cdhr_cl,
             lumcl_cl, beam_cl, globrad_cl, insol_cl, diff_cl, refl_cl, min_max_cl;
     
+    unsigned int numCopyRows;
+    if (oclConst->m < oclConst->j + yDim)
+        numCopyRows = oclConst->m - oclConst->j;
+    else
+        numCopyRows = yDim;
 	
 	//Construct the lat/long array if needed
 	if (!oclConst->proj_eq_ll && (!oclConst->latin || !oclConst->longin)) {
@@ -1512,6 +1542,8 @@ cl_int calculate_core_cl(int xDim, int yDim,
 			for (j = 0; j < xDim; ++j) {
 				xCoords[j] = oclConst->xmin + j *gridGeom->stepx;
 				yCoords[j] = yCoord;
+                
+//                printf("(%10d %10d) %10f %10f\n", xCoords[j], yCoords[j]);
 			}
 			
 			//Do the conversion for the row
@@ -1565,7 +1597,7 @@ cl_int calculate_core_cl(int xDim, int yDim,
     make_input_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->longin, 7, longitudeArray, &long_cl);
     make_input_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->coefbh, 8, cbhr, &cbhr_cl);
     make_input_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->coefdh, 9, cdhr, &cdhr_cl);
-	
+    
     //Make space for the outputs
     make_output_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->incidout, 10, &lumcl_cl);
     make_output_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->beam_rad, 11, &beam_cl);
@@ -1596,13 +1628,13 @@ cl_int calculate_core_cl(int xDim, int yDim,
     handleErr(err = clReleaseMemObject(cbhr_cl));
     handleErr(err = clReleaseMemObject(cdhr_cl));
     
-    //Copy requested outputs 
-    copy_output_cl(cmd_queue, context, kern, xDim, yDim, oclConst->incidout, lumcl, lumcl_cl);
-    copy_output_cl(cmd_queue, context, kern, xDim, yDim, oclConst->beam_rad, beam, beam_cl);
-    copy_output_cl(cmd_queue, context, kern, xDim, yDim, oclConst->insol_time, insol, insol_cl);
-    copy_output_cl(cmd_queue, context, kern, xDim, yDim, oclConst->diff_rad, diff, diff_cl);
-    copy_output_cl(cmd_queue, context, kern, xDim, yDim, oclConst->refl_rad, refl, refl_cl);
-    copy_output_cl(cmd_queue, context, kern, xDim, yDim, oclConst->glob_rad, globrad, globrad_cl);
+    //Copy requested outputs
+    copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->incidout, lumcl, lumcl_cl);
+    copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->beam_rad, beam, beam_cl);
+    copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->insol_time, insol, insol_cl);
+    copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->diff_rad, diff, diff_cl);
+    copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->refl_rad, refl, refl_cl);
+    copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->glob_rad, globrad, globrad_cl);
     copy_min_max_cl(cmd_queue, context, kern, oclConst, min_max_cl);
     
     //Release remaining resources
