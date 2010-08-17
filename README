@@ -1,6 +1,6 @@
 Here are the changed files in GRASS / GDAL. Everything in the alg directory and the GNUmakefile are the changed files in GDAL. The GNUmakefiles for GDAL are currently hardcoded to compile for OpenCL on Mac OS X. Those who know the 'correct' way to write a config script and/or makefile, feel free to submit something that works better.
 
-The other files in the 'raster' directory are for GRASS's r.sun module. The aren't even in a compilable state, so they're there simply for your viewing pleasure. Hopefully we'll figure a way around the pj_do_proj() function and we can get them working.
+The other files in the 'raster' directory are for GRASS's r.sun module. The makefile is hard coded to compile with OpenCL on Mac. If you have a better makefile, please send it my way. The OpenCL version of r.sun runs over 20x faster than the original version on my machine (2.26 GHz Mac Pro vs. GeForce GTX 285). However, it is hampered by the low memory on your GPU, so you may need to partition your raster. It also isn't tested well, so if you find a problem, send a kind bug report with your source data and commands to reproduce the problem to me.
 ~Seth
 
 seth@pricepages.org
