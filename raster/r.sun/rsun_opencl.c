@@ -543,8 +543,10 @@ cl_int copy_output_cl(cl_command_queue queue, cl_context context, cl_kernel kern
     int i;
     size_t sz = sizeof(float) * x * y;
     
-    if (!hasData)
+    if (!hasData) {
+        handleErr(err = clReleaseMemObject(clSrc));
         return CL_SUCCESS;
+    }
     
     //Make some pinned working memory
     cl_mem src_work_cl = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sz, NULL, &err);
@@ -563,6 +565,7 @@ cl_int copy_output_cl(cl_command_queue queue, cl_context context, cl_kernel kern
     
     //Clean up mem space
     handleErr(err = clReleaseMemObject(src_work_cl));
+    handleErr(err = clReleaseMemObject(clSrc));
     
     return CL_SUCCESS;
 }
@@ -651,6 +654,7 @@ cl_int copy_min_max_cl(cl_command_queue queue, cl_context context, cl_kernel ker
     
     //Clean up mem space
     handleErr(err = clReleaseMemObject(min_max_work_cl));
+    handleErr(err = clReleaseMemObject(min_max_cl));
     
     return CL_SUCCESS;
 }
@@ -1482,7 +1486,9 @@ cl_int calculate_core_cl(int xDim, int yDim,
     cl_kernel kern;
 	size_t groupSize;
     int numThreads = xDim*yDim;
+    int k;
     cl_int err;
+    int latMalloc = FALSE, lonMalloc = FALSE;
     
     cl_device_id dev = get_device(&err);
 
@@ -1497,7 +1503,6 @@ cl_int calculate_core_cl(int xDim, int yDim,
 	
 	//Construct the lat/long array if needed
 	if (!oclConst->proj_eq_ll && (!oclConst->latin || !oclConst->longin)) {
-		int k;
 		double *xCoords, *yCoords, *hCoords;
 		
 		//Alloc space, if needed, for the lat/long arrays
@@ -1505,13 +1510,15 @@ cl_int calculate_core_cl(int xDim, int yDim,
 			latitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
 			for (k = 0; k < yDim; ++k)
 				latitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
+            latMalloc = TRUE;
 		}
 		
 		if (longitudeArray == NULL) {
 			longitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
 			for (k = 0; k < yDim; ++k)
 				longitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
-		}
+            lonMalloc = TRUE;
+        }
 		
 		//Alloc more space to pass to the transformer
 		//The transformer uses double precision, but we want floats
@@ -1581,6 +1588,18 @@ cl_int calculate_core_cl(int xDim, int yDim,
     make_input_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->coefbh, 8, cbhr, &cbhr_cl);
     make_input_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->coefdh, 9, cdhr, &cdhr_cl);
     
+    //It's copied to the device and not needed
+    if (latMalloc == TRUE) {
+        for (k = 0; k < yDim; ++k)
+            G_free(latitudeArray[k]);
+        G_free(latitudeArray);
+    }
+    if (lonMalloc == TRUE) {
+        for (k = 0; k < yDim; ++k)
+            G_free(longitudeArray[k]);
+        G_free(longitudeArray);
+    }
+    
     //Make space for the outputs
     make_output_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->incidout, 10, &lumcl_cl);
     make_output_raster_cl(cmd_queue, context, kern, xDim, yDim, oclConst->beam_rad, 11, &beam_cl);
@@ -1611,7 +1630,7 @@ cl_int calculate_core_cl(int xDim, int yDim,
     handleErr(err = clReleaseMemObject(cbhr_cl));
     handleErr(err = clReleaseMemObject(cdhr_cl));
     
-    //Copy requested outputs
+    //Copy & release requested outputs
     copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->incidout, lumcl, lumcl_cl);
     copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->beam_rad, beam, beam_cl);
     copy_output_cl(cmd_queue, context, kern, xDim, numCopyRows, oclConst->insol_time, insol, insol_cl);
@@ -1621,13 +1640,6 @@ cl_int calculate_core_cl(int xDim, int yDim,
     copy_min_max_cl(cmd_queue, context, kern, oclConst, min_max_cl);
     
     //Release remaining resources
-    handleErr(err = clReleaseMemObject(lumcl_cl));
-    handleErr(err = clReleaseMemObject(beam_cl));
-    handleErr(err = clReleaseMemObject(globrad_cl));
-    handleErr(err = clReleaseMemObject(insol_cl));
-    handleErr(err = clReleaseMemObject(diff_cl));
-    handleErr(err = clReleaseMemObject(refl_cl));
-    
     handleErr(err = clReleaseKernel(kern));
     handleErr(err = clReleaseCommandQueue(cmd_queue));
     handleErr(err = clReleaseContext(context));

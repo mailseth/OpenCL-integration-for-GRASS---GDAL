@@ -181,6 +181,16 @@ double TOLER;
 int ll_correction = FALSE;
 double coslatsq;
 
+int get_num_rows ()
+{
+    int numRows = m / numPartitions;
+    
+    //Make sure we round up and keep true to the actual number of partitions
+    if (m % numPartitions)
+        ++numRows;
+    return numRows;
+}
+
 /* why not use G_distance() here which switches to geodesic/great
  circle distace as needed? */
 double distance(double x1, double x2, double y1, double y2)
@@ -768,7 +778,7 @@ int main(int argc, char *argv[])
 int INPUT_part(int offset, double *zmax)
 {
     int finalRow, rowrevoffset;
-    int numRows;
+    int numRows = get_num_rows();
     int numDigits;
     FCELL *cell1 = NULL, *cell2 = NULL;
     FCELL *cell3 = NULL, *cell4 = NULL, *cell5 = NULL, *cell6 = NULL, *cell7 =
@@ -783,12 +793,6 @@ int INPUT_part(int offset, double *zmax)
     int l, i, j;
     char shad_filename[256];
     char formatString[10];
-    
-    numRows = m / numPartitions;
-    
-    //Make sure we round up and keep true to the actual number of partitions
-    if (m % numPartitions)
-        ++numRows;
     
     finalRow = m - offset - numRows;
     if (finalRow < 0) {
@@ -1079,6 +1083,8 @@ int INPUT_part(int offset, double *zmax)
             Rast_close(fd_shad[i]);
             G_free(horizonbuf[i]);
         }
+        G_free(fd_shad);
+        G_free(horizonbuf);
     }
     
     
@@ -1125,10 +1131,11 @@ int INPUT_part(int offset, double *zmax)
 
 int OUTGR(void)
 {
-    FCELL *cell7 = NULL, *cell8 = NULL, *cell9 = NULL, *cell10 =
-	NULL, *cell11 = NULL, *cell12 = NULL;
+    FCELL *cell7 = NULL, *cell8 = NULL, *cell9 = NULL,
+        *cell10 = NULL, *cell11 = NULL, *cell12 = NULL;
     int fd7 = -1, fd8 = -1, fd9 = -1, fd10 = -1, fd11 = -1, fd12 = -1;
     int i, iarc, j;
+    int numRows = get_num_rows();
     
     if (incidout != NULL) {
         cell7 = Rast_allocate_f_buf();
@@ -1255,6 +1262,73 @@ int OUTGR(void)
         Rast_close(fd12);
         Rast_write_history(glob_rad, &hist);
     }
+    
+    if (z != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(z[i]);
+        G_free(z);
+    }
+    z = NULL;
+    
+    if (s != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(s[i]);
+        G_free(s);
+    }
+    s = NULL;
+    
+    if (o != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(o[i]);
+        G_free(o);
+    }
+    o = NULL;
+    
+    if (li != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(li[i]);
+        G_free(li);
+    }
+    li = NULL;
+    
+    if (a != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(a[i]);
+        G_free(a);
+    }
+    a = NULL;
+    
+    if (latitudeArray != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(latitudeArray[i]);
+        G_free(latitudeArray);
+    }
+    latitudeArray = NULL;
+    
+    if (longitudeArray != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(longitudeArray[i]);
+        G_free(longitudeArray);
+    }
+    longitudeArray = NULL;
+    
+    if (cbhr != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(cbhr[i]);
+        G_free(cbhr);
+    }
+    cbhr = NULL;
+    
+    if (cdhr != NULL) {
+        for (i = 0; i < numRows; ++i)
+            G_free(cdhr[i]);
+        G_free(cdhr);
+    }
+    cdhr = NULL;
+    
+    if (horizonarray != NULL)
+        G_free(horizonarray);
+    horizonarray = NULL;
     
     return 1;
 }
@@ -1607,7 +1681,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
     
     /*                      double energy; */
     int someRadiation;
-    int numRows;
+    int numRows = get_num_rows();
     int arrayOffset = 0;
     double lum, q1;
     double dayRad;
@@ -1714,12 +1788,6 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
     
     
     sunRadVar.G_norm_extra = com_sol_const(day);
-    
-    numRows = m / numPartitions;
-    
-    //Make sure we round up and keep true to the actual number of partitions
-    if (m % numPartitions)
-        ++numRows;
     
     if (useCivilTime()) {
         /* We need to calculate the deviation of the local solar time from the 
