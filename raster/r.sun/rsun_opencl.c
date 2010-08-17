@@ -110,8 +110,6 @@ int device_stats(cl_device_id device_id)
 	
 	printf("\nMax Work Group Size: %lu\n",max_work_group_size);
 	printf("Max Work Item Dims: %lu\n",max_work_item_dims);
-	for(i=0;i<max_work_item_dims;i++) 
-		printf("Max Work Items in Dim %lu: %lu\n",(long unsigned)(i+1),(long unsigned)max_work_item_sizes[i]);
 	
 	printf("Max Compute Units: %i\n",max_compute_units);
 	printf("\n");
@@ -375,8 +373,8 @@ cl_device_id get_device(cl_int *clErr)
     
     // Find the GPU CL device, this is what we really want
     // If there is no GPU device is CL capable, fall back to CPU
-//    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
+    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+//    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
     if (err != CL_SUCCESS) {
         // Find the CPU CL device, as a fallback
         err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
@@ -392,6 +390,8 @@ cl_device_id get_device(cl_int *clErr)
                           device_name, &returned_size);
     handleErrRetNULL(err);
     printf("Connecting to %s %s...\n", vendor_name, device_name);
+    
+//    device_stats(device);
 #endif
     
     return device;
@@ -683,6 +683,10 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     char *progBuf = (char *)calloc(128000, sizeof(char));
     
     const char *kernFunc =
+"#ifdef USE_ATOM_FUNC\n"
+     "#pragma OPENCL EXTENSION cl_khr_global_int32_extended_atomics : enable\n"
+"#endif\n"
+     
 "void com_par_const(float *sunGeom_lum_C11,\n"
                    "float *sunGeom_lum_C13,\n"
                    "float *sunGeom_lum_C22,\n"
@@ -764,7 +768,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "}\n"
     "}\n"
     
-    	/* vertical angle of the sun */
+    // vertical angle of the sun
     "*sunVarGeom_solarAltitude = asin(*sunVarGeom_sinSolarAltitude);\n"
     "*sunVarGeom_tanSolarAltitude = tan(*sunVarGeom_solarAltitude);\n"
     
@@ -773,7 +777,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float pom = sqrt(lum_Lx*lum_Lx + lum_Ly*lum_Ly);\n"
     
     "if (fabs(pom) > EPS) {\n"
-        "*sunVarGeom_solarAzimuth = acos(lum_Ly / pom);\n"	/* horiz. angle of the Sun */
+        "*sunVarGeom_solarAzimuth = acos(lum_Ly / pom);\n"	// horiz. angle of the Sun
         "if (lum_Lx < 0)\n"
             "*sunVarGeom_solarAzimuth = pi2 - *sunVarGeom_solarAzimuth;\n"
     "} else {\n"
@@ -856,9 +860,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                         "length * sunVarGeom_tanSolarAltitude;\n"
         
         "if (z2 < *sunVarGeom_zp)\n"
-            "success = 2;\n"		/* shadow */
+            "success = 2;\n"		// shadow
         "if (z2 > zmax)\n"
-            "success = 3;\n"		/* no test needed all visible */
+            "success = 3;\n"		// no test needed all visible
     "}\n"
     
     "if (success != 1) {\n"
@@ -892,11 +896,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 "{\n"
     "float s = 0.0f;\n"
     
-    "*sunVarGeom_isShadow = 0;\n"	/* no shadow */
+    "*sunVarGeom_isShadow = 0;\n"	// no shadow
     
     "if (useShadowFlag) {\n"
         "if (useHorizonDataFlag) {\n"
-            /* Start is due east, sungeom->timeangle = -pi/2 */
+            // Start is due east, sungeom->timeangle = -pi/2
             "float horizPos = sunVarGeom_sunAzimuthAngle / horizonInterval;\n"
             "int lowPos = (int) horizPos;\n"
             "int highPos = lowPos + 1;\n"
@@ -911,7 +915,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             
             "if (!(*sunVarGeom_isShadow))\n"
                 "s = sunSlopeGeom_lum_C31_l * cos(-sunGeom_timeAngle - sunSlopeGeom_longit_l)\n"
-                    "+ sunSlopeGeom_lum_C33_l;\n"	/* Jenco */
+                    "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
         "} else {\n"
             "int r;\n"
             "do {\n"
@@ -921,14 +925,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             "} while (r == 1);\n"
             
             "if (r == 2)\n"
-                "*sunVarGeom_isShadow = 1;\n"	/* shadow */
+                "*sunVarGeom_isShadow = 1;\n"	// shadow
             "else\n"
                 "s = sunSlopeGeom_lum_C31_l * cos(-sunGeom_timeAngle - sunSlopeGeom_longit_l)\n"
-                    "+ sunSlopeGeom_lum_C33_l;\n"	/* Jenco */
+                    "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
         "}\n"
     "} else {\n"
         "s = sunSlopeGeom_lum_C31_l * cos(-sunGeom_timeAngle - sunSlopeGeom_longit_l)\n"
-            "+ sunSlopeGeom_lum_C33_l;\n"	/* Jenco */
+            "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
     "}\n"
     
     "if (s < 0.0f)\n"
@@ -1064,15 +1068,15 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                 "(0.1f - 0.008f * sunVarGeom_solarAltitude);\n"
         "}\n"
         
-       /* refl. rad */
+       // refl. rad
         "(*rr) = alb * (bh + dh) * (1.0f - cosslope) * 0.5f;\n"
         "return dh * fx;\n"
-    "} else {\n"	/* plane */
+    "} else {\n"	// plane
         "(*rr) = 0.0f;\n"
         "return dh;\n"
     "}\n"
 "}\n"
- 
+    
 "__kernel void calculate(__global float *horizonArr,\n"
                        "__global float *z,\n"
                        "__global float *o,\n"
@@ -1233,14 +1237,8 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 "#endif\n"
     "} else\n"
         "linke = singleLinke;\n"
-/*
-    "if (gid%n == gid/n)\n"
-    "printf(\"(%10d %10d)80 %10f %10f %10f %10f %10f %10f %10f %10f\\n\", gid%n, gid/n,\n"
-    "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
-    "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
-    "latitude, longitude);\n"
-*/
-    "if (someRadiation) {\n"
+
+     "if (someRadiation) {\n"
         //joules2() is inlined so I don't need to pass in basically *everything*
 		//Double precision so summation works better (shouldn't slow much)
 		"double beam_e = 0.0;\n"
@@ -1258,7 +1256,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                 "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
                 "latitude, longitude);\n"
 
-        "if (ttime) {\n"		/*irradiance */
+        "if (ttime) {\n"		//irradiance
             "float s0 = lumcline2(horizonArr, z,\n"
                     "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
                     "&gridGeom_xx0, &gridGeom_yy0, gid*arrayNumInt,\n"
@@ -1273,7 +1271,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 				"if (!sunVarGeom_isShadow && s0 > 0.0f) {\n"
 					"beam_e = brad(s, li, cbhr, &bh, sunVarGeom_z_orig,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                            "sunSlopeGeom_aspect, s0, linke);\n"	/* beam radiation */
+                            "sunSlopeGeom_aspect, s0, linke);\n"	// beam radiation
 				"} else {\n"
 					"beam_e = 0.0f;\n"
 					"bh = 0.0f;\n"
@@ -1281,20 +1279,21 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 				
 				"float rr = 0.0f;\n"
 				"if (diff_rad || glob_rad)\n"
+                    // diffuse rad.
 					"diff_e = drad(s, li, a, cdhr, min_max, &rr, sunVarGeom_isShadow,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                            "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"	/* diffuse rad. */
+                            "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
 		
 				"if (refl_rad || glob_rad) {\n"
 					"if (diff_rad && glob_rad)\n"
                         "drad(s, li, a, cdhr, min_max, &rr, sunVarGeom_isShadow,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
                             "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
-					"refl_e = rr;\n"	/* reflected rad. */
+					"refl_e = rr;\n"	// reflected rad.
 				"}\n"
-			"}\n"			/* solarAltitude */
+			"}\n"			// solarAltitude
 		"} else {\n"
-			/* all-day radiation */
+			// all-day radiation
 			"int srStepNo = sunGeom_sunrise_time / timeStep;\n"
 			"float lastAngle = (sunGeom_sunset_time - 12.0f) * HOURANGLE;\n"
 			"float firstTime;\n"
@@ -1348,11 +1347,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                                     "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
 						"refl_e += timeStep * rr;\n"
 					"}\n"
-				"}\n"			/* illuminated */
+				"}\n"			// illuminated
     
 				"sunGeom_timeAngle += timeStep * HOURANGLE;\n"
-			"} while (sunGeom_timeAngle <= lastAngle);\n" /* we've got the sunset */
-		"}\n"				/* all-day radiation */
+			"} while (sunGeom_timeAngle <= lastAngle);\n" // we've got the sunset
+		"}\n"				// all-day radiation
 		
 		//Only apply values to where they're wanted
 		"if(beam_rad)\n"
@@ -1366,11 +1365,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 		"if(glob_rad)\n"
 			"globrad[gid] = beam_e + diff_e + refl_e;\n"
     "}\n"
-    /*
-    "if (gid%n == gid/n)\n"
-         "printf(\"(%10d %10d)99 %10f\\n\", gid%n, gid/n,\n"
-             "globrad[gid]);\n"
-*/
+
 "#ifdef USE_ATOM_FUNC\n"
     "atom_min(&(min_max[ 8]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
     "atom_max(&(min_max[ 9]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
@@ -1378,11 +1373,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "atom_max(&(min_max[11]), (unsigned int)(sunGeom_sunset_time * MAX_INT / 24.0f));\n"
 "#endif\n"
 "}\n";
-    
+
     //Actually make the program from assembled source
     program = clCreateProgramWithSource(context, 1, (const char**)&kernFunc,
                                         NULL, &err);
     handleErrRetNULL(err);
+    
+    // "USE_ATOM_FUNC" isn't defined because it seems flaky on my GPU
+    // Feel free to figure it out
     
     //Assemble the compiler arg string for speed. All invariants should be defined here.
     sprintf(buffer, "-cl-fast-relaxed-math -Werror -D FALSE=0 -D TRUE=1 "
@@ -1402,7 +1400,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             "-D insol_time=%d -D diff_rad=%d -D refl_rad=%d -D glob_rad=%d "
             "-D useShadowFlag=%d -D useHorizonDataFlag=%d -D EPS=%015.15lff -D HOURANGLE=%015.15lff "
             "-D PI=%015.15lff -D DEGREEINMETERS=%015.15lff -D UNDEFZ=%015.15lff -D EARTHRADIUS=%015.15lff -D UNDEF=%015.15lff "
-            "-D MAX_INT=%d.0f -D USE_ATOM_FUNC ",
+            "-D MAX_INT=%d.0f ",
             invScale, pihalf, pi2, deg2rad, rad2deg,
             oclConst->invstepx, oclConst->invstepy, oclConst->xmin, oclConst->ymin, oclConst->xmax,
             oclConst->ymax, oclConst->civilTime, oclConst->tim, oclConst->step, oclConst->horizonStep,
