@@ -29,6 +29,21 @@
 
 #define  MAX_INT 2147483647
 
+/*
+ We'll partition the OpenCL run into many sets of kernel runs. Otherwise we'll
+ monopolize the GPU for too long and the watchdog timer will kill the job.
+ 32 partitions should be appropriate in the vast majority of instances. If you
+ notice the display freezing for a few seconds, then the job fails with
+ CL_INVALID_COMMAND_QUEUE, it's probably the fault of the watchdog timer kicking
+ in. You'll need to increase the number of partitions and recompile the module.
+ 
+ In my brief test, a value of 32 increased runtime by 2%. Seeing as it's already
+ been decreased by ~2000% over the original code, I think this is acceptable.
+ If you have no display connected to your graphics card, then the watchdog timer
+ should be disabled and you can change this to 1 for maximum performance.
+ */
+#define NUM_OPENCL_PARTITIONS 32
+
 #define handleErr(err) if((err) != CL_SUCCESS) { \
     printf("Error at file %s line %d; Err val: %d\n", __FILE__, __LINE__, err); \
     printCLErr(err); \
@@ -404,10 +419,11 @@ cl_device_id get_device(cl_int *clErr)
  
  Returns CL_SUCCESS on success and other CL_* errors when something goes wrong.
  */
-cl_int run_kern(cl_command_queue queue, cl_kernel kern, size_t glob_size, size_t group_size)
+cl_int run_kern(cl_command_queue queue, cl_kernel kern, size_t num_threads, size_t group_size)
 {
     cl_int err = CL_SUCCESS;
     cl_event ev;
+    size_t glob_size;
 #ifndef NDEBUG
     size_t start_time = 0;
     size_t end_time;
@@ -415,7 +431,10 @@ cl_int run_kern(cl_command_queue queue, cl_kernel kern, size_t glob_size, size_t
     handleErr(err = clSetCommandQueueProperty(queue, CL_QUEUE_PROFILING_ENABLE, CL_TRUE, NULL));
 #endif
     
-    
+    if (num_threads % group_size)
+        glob_size = num_threads + group_size - num_threads % group_size;
+    else
+        glob_size = num_threads;
     
     // Run the calculation by enqueuing it and forcing the 
     // command queue to complete the task
@@ -680,7 +699,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     cl_kernel kernel;
 	cl_int err = CL_SUCCESS;
     char *buffer = (char *)calloc(128000, sizeof(char));
-    char *progBuf = (char *)calloc(128000, sizeof(char));
     
     const char *kernFunc =
 "#ifdef USE_ATOM_FUNC\n"
@@ -950,9 +968,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
            "const float sunVarGeom_sinSolarAltitude\n,"
            "const float sunSlopeGeom_aspect\n,"
            "const float sh,\n"
-           "const float linke)\n"
+           "const float linke,\n"
+           "const unsigned int gid)\n"
 "{\n"
-    "unsigned int gid = get_global_id(0);\n"
     "float h0refract = sunVarGeom_solarAltitude + 0.061359f *\n"
         "(0.1594f + sunVarGeom_solarAltitude * (1.123f + 0.065656f * sunVarGeom_solarAltitude)) /\n"
         "(1.0f + sunVarGeom_solarAltitude * (28.9344f + 277.3971f * sunVarGeom_solarAltitude));\n"
@@ -1000,9 +1018,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
            "const float sunSlopeGeom_aspect,\n"
            "const float sh,\n"
            "const float bh,\n"
-           "const float linke)\n"
+           "const float linke,\n"
+           "const unsigned int gid)\n"
 "{\n"
-    "unsigned int gid = get_global_id(0);\n"
     "float A1, gh, fg, slope;\n"
     
     "if(slopein)\n"
@@ -1076,40 +1094,40 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "return dh;\n"
     "}\n"
 "}\n"
-    
+	
 "__kernel void calculate(__global float *horizonArr,\n"
-                       "__global float *z,\n"
-                       "__global float *o,\n"
-                       "__global float *s,\n"
-                       "__global float *li,\n"
-                       "__global float *a,\n"
-                       "__global float *latitudeArray,\n"
-                       "__global float *longitudeArray,\n"
-                       "__global float *cbhr,\n"
-                       "__global float *cdhr,\n"
+                        "__global float *z,\n"
+                        "__global float *o,\n"
+                        "__global float *s,\n"
+                        "__global float *li,\n"
+                        "__global float *a,\n"
+                        "__global float *latitudeArray,\n"
+                        "__global float *longitudeArray,\n"
+                        "__global float *cbhr,\n"
+                        "__global float *cdhr,\n"
 
-                       "__global float *lumcl,\n"
-                       "__global float *beam,\n"
-                       "__global float *globrad,\n"
-                       "__global float *insol,\n"
-                       "__global float *diff,\n"
-                       "__global float *refl,\n"
-    
-                       "__global unsigned int *min_max )\n"
+                        "__global float *lumcl,\n"
+                        "__global float *beam,\n"
+                        "__global float *globrad,\n"
+                        "__global float *insol,\n"
+                        "__global float *diff,\n"
+                        "__global float *refl,\n"
+
+                        "__global unsigned int *min_max,\n"
+                        "unsigned int partitionNum)\n"
 "{\n"
-    "unsigned int gid = get_global_id(0);\n"
+    "unsigned int gid = get_global_id(0)+partitionNum*get_global_size(0);\n"
     "unsigned int gsz = n*numRows;\n"
-    "unsigned int lid = get_local_id(0);\n"
-    "unsigned int lsz = get_local_size(0);\n"
-    "float longitTime = 0.0f;\n"
-    "float o_orig, coslatsq;\n"
-    "float gridGeom_xx0, gridGeom_yy0, gridGeom_xg0, gridGeom_yg0;\n"
     
     //Don't overrun arrays
     "if (gid >= gsz)\n"
         "return;\n"
     
-    "if (civilTimeFlag)\n"
+    "float longitTime = 0.0f;\n"
+    "float coslatsq;\n"
+    "float gridGeom_xx0, gridGeom_yy0, gridGeom_xg0, gridGeom_yg0;\n"
+
+     "if (civilTimeFlag)\n"
         "longitTime = -longitudeArray[gid] / 15.0f;\n"
     
     "gridGeom_xg0 = gridGeom_xx0 = stepx * (gid % m);\n"
@@ -1122,25 +1140,25 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "coslatsq = coslat * coslat;\n"
     "}\n"
     
-    "float sunVarGeom_z_orig, z1, sunVarGeom_zp;\n"
-    "sunVarGeom_z_orig = z1 = sunVarGeom_zp = z[gid];\n"
+    "float sunVarGeom_z_orig, sunVarGeom_zp;\n"
+    "sunVarGeom_z_orig = sunVarGeom_zp = z[gid];\n"
     
 	//Return if no elevation info
 	//Return if no lat/long info
-    "if (z1 == UNDEFZ || (!proj_eq_ll && (!latin || !longin)))\n"
+    "if (sunVarGeom_z_orig == UNDEFZ || (!proj_eq_ll && (!latin || !longin)))\n"
         "return;\n"
-	
+    
     "float latitude, longitude;\n"
-    "if (latin)\n"
-        "latitude = latitudeArray[gid] * deg2rad;\n"
-    "if (longin)\n"
-        "longitude = longitudeArray[gid] * deg2rad;\n"
-
     "if (proj_eq_ll) {\n"   //	ll projection
         "longitude = gridGeom_xp * deg2rad;\n"
         "latitude  = gridGeom_yp * deg2rad;\n"
+    "} else {\n"
+		"if (latin)\n"
+			"latitude = latitudeArray[gid] * deg2rad;\n"
+		"if (longin)\n"
+			"longitude = longitudeArray[gid] * deg2rad;\n"
     "}\n"
-    
+
 "#ifdef USE_ATOM_FUNC\n"
     "if (latin || proj_eq_ll) {\n"
         "atom_min(&(min_max[ 4]), (unsigned int)((latitude + 90.0f) * MAX_INT / 180.0f));\n"
@@ -1159,15 +1177,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             "sunSlopeGeom_aspect = o[gid] * deg2rad;\n"
         "else\n"
             "sunSlopeGeom_aspect = UNDEF;\n"
-    "} else {\n"
+    "} else\n"
         "sunSlopeGeom_aspect = singleAspect;\n"
-    "}\n"
     
     "if (slopein)\n"
         "sunSlopeGeom_slope = s[gid] * deg2rad;\n"
     "else\n"
         "sunSlopeGeom_slope = singleSlope;\n"
-
+    
     "float cos_u = cos(pihalf - sunSlopeGeom_slope);\n"
     "float sin_u = sin(pihalf - sunSlopeGeom_slope);\n"
     "float cos_v = cos(pihalf + sunSlopeGeom_aspect);\n"
@@ -1271,7 +1288,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 				"if (!sunVarGeom_isShadow && s0 > 0.0f) {\n"
 					"beam_e = brad(s, li, cbhr, &bh, sunVarGeom_z_orig,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                            "sunSlopeGeom_aspect, s0, linke);\n"	// beam radiation
+                            "sunSlopeGeom_aspect, s0, linke, gid);\n"	// beam radiation
 				"} else {\n"
 					"beam_e = 0.0f;\n"
 					"bh = 0.0f;\n"
@@ -1282,17 +1299,18 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                     // diffuse rad.
 					"diff_e = drad(s, li, a, cdhr, min_max, &rr, sunVarGeom_isShadow,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                            "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
+                            "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke, gid);\n"
 		
 				"if (refl_rad || glob_rad) {\n"
 					"if (diff_rad && glob_rad)\n"
                         "drad(s, li, a, cdhr, min_max, &rr, sunVarGeom_isShadow,\n"
                             "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                            "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
+                            "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke, gid);\n"
 					"refl_e = rr;\n"	// reflected rad.
 				"}\n"
 			"}\n"			// solarAltitude
 		"} else {\n"
+    
 			// all-day radiation
 			"int srStepNo = sunGeom_sunrise_time / timeStep;\n"
 			"float lastAngle = (sunGeom_sunset_time - 12.0f) * HOURANGLE;\n"
@@ -1330,7 +1348,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 						"++insol_count;\n"
                         "beam_e += timeStep * brad(s, li, cbhr, &bh, sunVarGeom_z_orig,\n"
                                 "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                                "sunSlopeGeom_aspect, s0, linke);\n"
+                                "sunSlopeGeom_aspect, s0, linke, gid);\n"
                     "} else {\n"
 						"bh = 0.0f;\n"
 					"}\n"
@@ -1339,18 +1357,19 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 					"if (diff_rad || glob_rad)\n"
                         "diff_e += timeStep * drad(s, li, a, cdhr, min_max, &rr, sunVarGeom_isShadow,\n"
                                 "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                                "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
+                                "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke, gid);\n"
 					"if (refl_rad || glob_rad) {\n"
 						"if (diff_rad && glob_rad)\n"
                             "drad(s, li, a, cdhr, min_max, &rr, sunVarGeom_isShadow,\n"
                                     "sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude,\n"
-                                    "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke);\n"
+                                    "sunVarGeom_solarAzimuth, sunSlopeGeom_aspect, s0, bh, linke, gid);\n"
 						"refl_e += timeStep * rr;\n"
 					"}\n"
 				"}\n"			// illuminated
     
 				"sunGeom_timeAngle += timeStep * HOURANGLE;\n"
 			"} while (sunGeom_timeAngle <= lastAngle);\n" // we've got the sunset
+    
 		"}\n"				// all-day radiation
 		
 		//Only apply values to where they're wanted
@@ -1365,7 +1384,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 		"if(glob_rad)\n"
 			"globrad[gid] = beam_e + diff_e + refl_e;\n"
     "}\n"
-
+	 
 "#ifdef USE_ATOM_FUNC\n"
     "atom_min(&(min_max[ 8]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
     "atom_max(&(min_max[ 9]), (unsigned int)(sunGeom_sunrise_time * MAX_INT / 24.0f));\n"
@@ -1380,7 +1399,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     handleErrRetNULL(err);
     
     // "USE_ATOM_FUNC" isn't defined because it seems flaky on my GPU
-    // Feel free to figure it out
+    // Feel free to figure it out (watchdog timer?); seems to work on the CPU
     
     //Assemble the compiler arg string for speed. All invariants should be defined here.
     sprintf(buffer, "-cl-fast-relaxed-math -Werror -D FALSE=0 -D TRUE=1 "
@@ -1446,7 +1465,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         else if(buffer[0] == CL_BUILD_IN_PROGRESS)
             printf("CL_BUILD_IN_PROGRESS\n");
         
-        printf("Program Source:\n%s\n", progBuf);
+        printf("Program Source:\n%s\n", kernFunc);
         return NULL;
     }
     
@@ -1457,7 +1476,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     handleErrRetNULL(err);
     
     free(buffer);
-    free(progBuf);
     return kernel;
 }
 
@@ -1608,13 +1626,12 @@ cl_int calculate_core_cl(int xDim, int yDim,
     make_min_max_cl(cmd_queue, context, kern, &min_max_cl);
     
     //Do the dirty work
-    size_t globSize;
-    if (numThreads % groupSize)
-        globSize = numThreads + groupSize - numThreads % groupSize;
-    else
-        globSize = numThreads;
-
-    run_kern(cmd_queue, kern, globSize, groupSize);
+    for (k = 0; k < NUM_OPENCL_PARTITIONS; ++k) {
+        handleErr(err = clSetKernelArg(kern, 17, sizeof(unsigned int), &k));
+        //FIXME: Most efficent wolud be to set all except the last partition
+        //to be a multiple of the group size so there is no overlap.
+        run_kern(cmd_queue, kern, numThreads/NUM_OPENCL_PARTITIONS, groupSize);
+    }
     
     //Release unneeded inputs
     handleErr(err = clReleaseMemObject(horizon_cl));
