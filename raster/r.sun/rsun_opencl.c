@@ -47,7 +47,6 @@
 #define handleErr(err) if((err) != CL_SUCCESS) { \
     printf("Error at file %s line %d; Err val: %d\n", __FILE__, __LINE__, err); \
     printCLErr(err); \
-    while(1){}\
     return err; \
 }
 
@@ -68,158 +67,6 @@
         fallBackMem = NULL; \
     } \
 }
-
-#ifndef NDEBUG
-int device_stats(cl_device_id device_id)
-{
-	
-	int err;
-	size_t returned_size;
-    int i;
-	
-	// Report the device vendor and device name
-    cl_char vendor_name[1024] = {0};
-    cl_char device_name[1024] = {0};
-	cl_char device_profile[1024] = {0};
-	cl_char device_extensions[1024] = {0};
-    
-	cl_device_local_mem_type local_mem_type;
-    cl_ulong global_mem_size, global_mem_cache_size;
-	cl_ulong max_mem_alloc_size;
-	cl_uint clock_frequency, vector_width, max_compute_units;
-	size_t max_work_item_dims,max_work_group_size, max_work_item_sizes[3];
-	
-	cl_uint vector_types[] = {CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR, CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT,CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG,CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT,CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE}; 
-	char *vector_type_names[] = {"char","short","int","long","float","double"};
-	
-	err = clGetDeviceInfo(device_id, CL_DEVICE_VENDOR, sizeof(vendor_name), vendor_name, &returned_size);
-    err|= clGetDeviceInfo(device_id, CL_DEVICE_NAME, sizeof(device_name), device_name, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_PROFILE, sizeof(device_profile), device_profile, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_EXTENSIONS, sizeof(device_extensions), device_extensions, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_LOCAL_MEM_TYPE, sizeof(local_mem_type), &local_mem_type, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(global_mem_size), &global_mem_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, sizeof(global_mem_cache_size), &global_mem_cache_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(max_mem_alloc_size), &max_mem_alloc_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(clock_frequency), &clock_frequency, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_work_group_size), &max_work_group_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, sizeof(max_work_item_dims), &max_work_item_dims, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(max_work_item_sizes), max_work_item_sizes, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(max_compute_units), &max_compute_units, &returned_size);
-	
-	printf("Vendor: %s\n", vendor_name);
-	printf("Device Name: %s\n", device_name);
-	printf("Profile: %s\n", device_profile);
-	printf("Supported Extensions: %s\n\n", device_extensions);
-	
-	printf("Local Mem Type (Local=1, Global=2): %i\n",(int)local_mem_type);
-	printf("Global Mem Size (MB): %i\n",(int)global_mem_size/(1024*1024));
-	printf("Global Mem Cache Size (Bytes): %i\n",(int)global_mem_cache_size);
-	printf("Max Mem Alloc Size (MB): %ld\n",(long int)max_mem_alloc_size/(1024*1024));
-	
-	printf("Clock Frequency (MHz): %i\n\n",clock_frequency);
-	
-	for(i=0;i<6;i++){
-		err|= clGetDeviceInfo(device_id, vector_types[i], sizeof(clock_frequency), &vector_width, &returned_size);
-		printf("Vector type width for: %s = %i\n",vector_type_names[i],vector_width);
-	}
-	
-	printf("\nMax Work Group Size: %lu\n",max_work_group_size);
-	printf("Max Work Item Dims: %lu\n",max_work_item_dims);
-	
-	printf("Max Compute Units: %i\n",max_compute_units);
-	printf("\n");
-	
-	return CL_SUCCESS;
-}
-
-void printImgFmt(cl_channel_order order, cl_channel_type type)
-{
-    switch (order)
-    {
-        case CL_R:
-            printf("CL_R ");
-            break;
-        case CL_A:
-            printf("CL_A ");
-            break;
-        case CL_RG:
-            printf("CL_RG ");
-            break;
-        case CL_RA:
-            printf("CL_RA ");
-            break;
-        case CL_RGB:
-            printf("CL_RGB ");
-            break;
-        case CL_RGBA:
-            printf("CL_RGBA ");
-            break;
-        case CL_BGRA:
-            printf("CL_BGRA ");
-            break;
-        case CL_ARGB:
-            printf("CL_ARGB ");
-            break;
-        case CL_INTENSITY:
-            printf("CL_INTENSITY ");
-            break;
-        case CL_LUMINANCE:
-            printf("CL_LUMINANCE ");
-            break;
-    }
-    
-    switch (type)
-    {
-        case CL_SNORM_INT8:
-            printf("CL_SNORM_INT8");
-            break;
-        case CL_SNORM_INT16:
-            printf("CL_SNORM_INT16");
-            break;
-        case CL_UNORM_INT8:
-            printf("CL_UNORM_INT8");
-            break;
-        case CL_UNORM_INT16:
-            printf("CL_UNORM_INT16");
-            break;
-        case CL_UNORM_SHORT_565:
-            printf("CL_UNORM_SHORT_565");
-            break;
-        case CL_UNORM_SHORT_555:
-            printf("CL_UNORM_SHORT_555");
-            break;
-        case CL_UNORM_INT_101010:
-            printf("CL_UNORM_INT_101010");
-            break;
-        case CL_SIGNED_INT8:
-            printf("CL_SIGNED_INT8");
-            break;
-        case CL_SIGNED_INT16:
-            printf("CL_SIGNED_INT16");
-            break;
-        case CL_SIGNED_INT32:
-            printf("CL_SIGNED_INT32");
-            break;
-        case CL_UNSIGNED_INT8:
-            printf("CL_UNSIGNED_INT8");
-            break;
-        case CL_UNSIGNED_INT16:
-            printf("CL_UNSIGNED_INT16");
-            break;
-        case CL_UNSIGNED_INT32:
-            printf("CL_UNSIGNED_INT32");
-            break;
-        case CL_HALF_FLOAT:
-            printf("CL_HALF_FLOAT");
-            break;
-        case CL_FLOAT:
-            printf("CL_FLOAT");
-            break;
-    }
-    
-    printf("\n");
-}
-#endif
 
 void printCLErr(cl_int err)
 {
@@ -405,8 +252,6 @@ cl_device_id get_device(cl_int *clErr)
                           device_name, &returned_size);
     handleErrRetNULL(err);
     printf("Connecting to %s %s...\n", vendor_name, device_name);
-    
-//    device_stats(device);
 #endif
     
     return device;
@@ -423,7 +268,8 @@ cl_int run_kern(cl_command_queue queue, cl_kernel kern, size_t num_threads, size
 {
     cl_int err = CL_SUCCESS;
     cl_event ev;
-    size_t glob_size;
+    size_t glob_size, par_threads;
+    int i;
 #ifndef NDEBUG
     size_t start_time = 0;
     size_t end_time;
@@ -431,30 +277,42 @@ cl_int run_kern(cl_command_queue queue, cl_kernel kern, size_t num_threads, size
     handleErr(err = clSetCommandQueueProperty(queue, CL_QUEUE_PROFILING_ENABLE, CL_TRUE, NULL));
 #endif
     
-    if (num_threads % group_size)
-        glob_size = num_threads + group_size - num_threads % group_size;
+    par_threads = num_threads/NUM_OPENCL_PARTITIONS;
+    
+    if (par_threads % group_size)
+        glob_size = par_threads + group_size - par_threads % group_size;
     else
-        glob_size = num_threads;
+        glob_size = par_threads;
     
-    // Run the calculation by enqueuing it and forcing the 
-    // command queue to complete the task
-    handleErr(err = clEnqueueNDRangeKernel(queue, kern, 1, NULL, 
-                                           &glob_size, &group_size, 0, NULL, &ev));
-    handleErr(err = clFinish(queue));
-    
+    for (i = 0; i < NUM_OPENCL_PARTITIONS; ++i) {
+        unsigned int thread_offset = i*glob_size;
+        handleErr(err = clSetKernelArg(kern, 17, sizeof(unsigned int), &thread_offset));
+        
+        // Run the calculation by enqueuing it and forcing the 
+        // command queue to complete the task
+        handleErr(err = clEnqueueNDRangeKernel(queue, kern, 1, NULL, 
+                                               &glob_size, &group_size, 0, NULL, &ev));
+        handleErr(err = clFinish(queue));
+        
 #ifndef NDEBUG
-    handleErr(err = clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_START,
-                                            sizeof(size_t), &start_time, NULL));
-    handleErr(err = clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_END,
-                                            sizeof(size_t), &end_time, NULL));
-    assert(end_time != 0);
-    assert(start_time != 0);
-    handleErr(err = clReleaseEvent(ev));
-    printf("Kernel Time: %10lu\n", (long int)((end_time-start_time)/100000));
+        handleErr(err = clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_START,
+                                                sizeof(size_t), &start_time, NULL));
+        handleErr(err = clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_END,
+                                                sizeof(size_t), &end_time, NULL));
+        assert(end_time != 0);
+        assert(start_time != 0);
+        handleErr(err = clReleaseEvent(ev));
+        printf("Kernel Time: %10lu\n", (long int)((end_time-start_time)/100000));
 #endif
+    }
     return CL_SUCCESS;
 }
 
+/*
+ Make and copy the memory for the horizon information. It's optional, so if it
+ isn't being used we make a very small buffer instead. That way we can pass
+ something to the kernel.
+ */
 cl_int make_hoz_mem_cl(cl_command_queue cmd_queue, cl_context context, cl_kernel kern,
                        unsigned int numThreads, int useHoz, unsigned char *hozArr,
                        cl_mem *horizon_cl)
@@ -485,6 +343,13 @@ cl_int make_hoz_mem_cl(cl_command_queue cmd_queue, cl_context context, cl_kernel
     return CL_SUCCESS;
 }
 
+/*
+ Make and copy the memory for an input buffer. It's often optional, so if it
+ isn't being used we make a very small buffer instead. That way we can pass
+ something to the kernel. The data is assembled in temp pinned memory, then
+ copied to the device in one large block. (Transfers are faster from pinned
+ memory.)
+ */
 cl_int make_input_raster_cl(cl_command_queue cmd_queue, cl_context context, cl_kernel kern,
                             unsigned int x, unsigned int y, int useData, unsigned int argNum,
                             float **src_gs, cl_mem *dst_cl)
@@ -1114,9 +979,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                         "__global float *refl,\n"
 
                         "__global unsigned int *min_max,\n"
-                        "unsigned int partitionNum)\n"
+                        "unsigned int threadOffset)\n"
 "{\n"
-    "unsigned int gid = get_global_id(0)+partitionNum*get_global_size(0);\n"
+    "unsigned int gid = get_global_id(0)+threadOffset;\n"
     "unsigned int gsz = n*numRows;\n"
     
     //Don't overrun arrays
@@ -1402,7 +1267,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     // Feel free to figure it out (watchdog timer?); seems to work on the CPU
     
     //Assemble the compiler arg string for speed. All invariants should be defined here.
-    sprintf(buffer, "-cl-fast-relaxed-math -Werror -D FALSE=0 -D TRUE=1 "
+    sprintf(buffer, "-cl-fast-relaxed-math -cl-mad-enable -Werror -D FALSE=0 -D TRUE=1 "
             "-D invScale=%015.15lff -D pihalf=%015.15lff -D pi2=%015.15lff -D deg2rad=%015.15lff -D rad2deg=%015.15lff "
             "-D invstepx=%015.15lff -D invstepy=%015.15lff -D xmin=%015.15lff -D ymin=%015.15lff -D xmax=%015.15lff "
             "-D ymax=%015.15lff -D civilTime=%015.15lff -D tim=%015.15lff -D timeStep=%015.15lff -D horizonStep=%015.15lff "
@@ -1626,12 +1491,7 @@ cl_int calculate_core_cl(int xDim, int yDim,
     make_min_max_cl(cmd_queue, context, kern, &min_max_cl);
     
     //Do the dirty work
-    for (k = 0; k < NUM_OPENCL_PARTITIONS; ++k) {
-        handleErr(err = clSetKernelArg(kern, 17, sizeof(unsigned int), &k));
-        //FIXME: Most efficent wolud be to set all except the last partition
-        //to be a multiple of the group size so there is no overlap.
-        run_kern(cmd_queue, kern, numThreads/NUM_OPENCL_PARTITIONS, groupSize);
-    }
+    run_kern(cmd_queue, kern, numThreads, groupSize);
     
     //Release unneeded inputs
     handleErr(err = clReleaseMemObject(horizon_cl));
