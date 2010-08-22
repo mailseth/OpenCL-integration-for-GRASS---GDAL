@@ -29,7 +29,6 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdio.h>
 #include "cpl_string.h"
 #include "gdalwarpkernel_opencl.h"
 
@@ -57,96 +56,6 @@
         fallBackMem = NULL; \
     } \
 }
-
-#ifndef NDEBUG
-void printImgFmt(cl_channel_order order, cl_channel_type type)
-{
-    switch (order)
-    {
-        case CL_R:
-            printf("CL_R ");
-            break;
-        case CL_A:
-            printf("CL_A ");
-            break;
-        case CL_RG:
-            printf("CL_RG ");
-            break;
-        case CL_RA:
-            printf("CL_RA ");
-            break;
-        case CL_RGB:
-            printf("CL_RGB ");
-            break;
-        case CL_RGBA:
-            printf("CL_RGBA ");
-            break;
-        case CL_BGRA:
-            printf("CL_BGRA ");
-            break;
-        case CL_ARGB:
-            printf("CL_ARGB ");
-            break;
-        case CL_INTENSITY:
-            printf("CL_INTENSITY ");
-            break;
-        case CL_LUMINANCE:
-            printf("CL_LUMINANCE ");
-            break;
-    }
-    
-    switch (type)
-    {
-        case CL_SNORM_INT8:
-            printf("CL_SNORM_INT8");
-            break;
-        case CL_SNORM_INT16:
-            printf("CL_SNORM_INT16");
-            break;
-        case CL_UNORM_INT8:
-            printf("CL_UNORM_INT8");
-            break;
-        case CL_UNORM_INT16:
-            printf("CL_UNORM_INT16");
-            break;
-        case CL_UNORM_SHORT_565:
-            printf("CL_UNORM_SHORT_565");
-            break;
-        case CL_UNORM_SHORT_555:
-            printf("CL_UNORM_SHORT_555");
-            break;
-        case CL_UNORM_INT_101010:
-            printf("CL_UNORM_INT_101010");
-            break;
-        case CL_SIGNED_INT8:
-            printf("CL_SIGNED_INT8");
-            break;
-        case CL_SIGNED_INT16:
-            printf("CL_SIGNED_INT16");
-            break;
-        case CL_SIGNED_INT32:
-            printf("CL_SIGNED_INT32");
-            break;
-        case CL_UNSIGNED_INT8:
-            printf("CL_UNSIGNED_INT8");
-            break;
-        case CL_UNSIGNED_INT16:
-            printf("CL_UNSIGNED_INT16");
-            break;
-        case CL_UNSIGNED_INT32:
-            printf("CL_UNSIGNED_INT32");
-            break;
-        case CL_HALF_FLOAT:
-            printf("CL_HALF_FLOAT");
-            break;
-        case CL_FLOAT:
-            printf("CL_FLOAT");
-            break;
-    }
-    
-    printf("\n");
-}
-#endif
 
 void printCLErr(cl_int err)
 {
