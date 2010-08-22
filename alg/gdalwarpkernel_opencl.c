@@ -1,4 +1,34 @@
+/******************************************************************************
+ *
+ * Project:  OpenCL Image Reprojector
+ * Purpose:  Implementation of the GDALWarpKernel reprojector in OpenCL.
+ * Author:   Seth Price, seth@pricepages.org
+ *
+ ******************************************************************************
+ * Copyright (c) 2010, Seth Price <seth@pricepages.org>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
+
 #include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <stdio.h>
 #include "cpl_string.h"
 #include "gdalwarpkernel_opencl.h"
@@ -28,74 +58,7 @@
     } \
 }
 
-
-
 #ifndef NDEBUG
-int device_stats(cl_device_id device_id)
-{
-	
-	int err;
-	size_t returned_size;
-    int i;
-	
-	// Report the device vendor and device name
-    // 
-    cl_char vendor_name[1024] = {0};
-    cl_char device_name[1024] = {0};
-	cl_char device_profile[1024] = {0};
-	cl_char device_extensions[1024] = {0};
-    
-	cl_device_local_mem_type local_mem_type;
-    cl_ulong global_mem_size, global_mem_cache_size;
-	cl_ulong max_mem_alloc_size;
-	cl_uint clock_frequency, vector_width, max_compute_units;
-	size_t max_work_item_dims,max_work_group_size, max_work_item_sizes[3];
-	
-	cl_uint vector_types[] = {CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR, CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT,CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG,CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT,CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE}; 
-	char *vector_type_names[] = {"char","short","int","long","float","double"};
-	
-	err = clGetDeviceInfo(device_id, CL_DEVICE_VENDOR, sizeof(vendor_name), vendor_name, &returned_size);
-    err|= clGetDeviceInfo(device_id, CL_DEVICE_NAME, sizeof(device_name), device_name, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_PROFILE, sizeof(device_profile), device_profile, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_EXTENSIONS, sizeof(device_extensions), device_extensions, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_LOCAL_MEM_TYPE, sizeof(local_mem_type), &local_mem_type, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(global_mem_size), &global_mem_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, sizeof(global_mem_cache_size), &global_mem_cache_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(max_mem_alloc_size), &max_mem_alloc_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(clock_frequency), &clock_frequency, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_work_group_size), &max_work_group_size, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, sizeof(max_work_item_dims), &max_work_item_dims, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(max_work_item_sizes), max_work_item_sizes, &returned_size);
-	err|= clGetDeviceInfo(device_id, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(max_compute_units), &max_compute_units, &returned_size);
-	
-	printf("Vendor: %s\n", vendor_name);
-	printf("Device Name: %s\n", device_name);
-	printf("Profile: %s\n", device_profile);
-	printf("Supported Extensions: %s\n\n", device_extensions);
-	
-	printf("Local Mem Type (Local=1, Global=2): %i\n",(int)local_mem_type);
-	printf("Global Mem Size (MB): %i\n",(int)global_mem_size/(1024*1024));
-	printf("Global Mem Cache Size (Bytes): %i\n",(int)global_mem_cache_size);
-	printf("Max Mem Alloc Size (MB): %ld\n",(long int)max_mem_alloc_size/(1024*1024));
-	
-	printf("Clock Frequency (MHz): %i\n\n",clock_frequency);
-	
-	for(i=0;i<6;i++){
-		err|= clGetDeviceInfo(device_id, vector_types[i], sizeof(clock_frequency), &vector_width, &returned_size);
-		printf("Vector type width for: %s = %i\n",vector_type_names[i],vector_width);
-	}
-	
-	printf("\nMax Work Group Size: %lu\n",max_work_group_size);
-	printf("Max Work Item Dims: %lu\n",max_work_item_dims);
-	for(i=0;i<max_work_item_dims;i++) 
-		printf("Max Work Items in Dim %lu: %lu\n",(long unsigned)(i+1),(long unsigned)max_work_item_sizes[i]);
-	
-	printf("Max Compute Units: %i\n",max_compute_units);
-	printf("\n");
-	
-	return CL_SUCCESS;
-}
-
 void printImgFmt(cl_channel_order order, cl_channel_type type)
 {
     switch (order)
@@ -369,9 +332,7 @@ cl_device_id get_device()
     err |= clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), 
                            device_name, &returned_size);
     assert(err == CL_SUCCESS);
-    printf("Connecting to %s %s...\n", vendor_name, device_name);
-	
-//    device_stats(device);
+    printf("Connected to %s %s...\n", vendor_name, device_name);
 #endif
     
     return device;
@@ -1271,9 +1232,9 @@ cl_kernel get_kernel(struct oclWarper *warper, char useVec,
             "-D iSrcWidth=%d -D iSrcHeight=%d -D iDstWidth=%d -D iDstHeight=%d "
             "-D useUnifiedSrcDensity=%d -D useUnifiedSrcValid=%d "
             "-D useDstDensity=%d -D useDstValid=%d -D useImag=%d "
-            "-D fXScale=%010ff -D fYScale=%010ff -D fXFilter=%010ff -D fYFilter=%010ff "
+            "-D fXScale=%015.15lff -D fYScale=%015.15lff -D fXFilter=%015.15lff -D fYFilter=%015.15lff "
             "-D nXRadius=%d -D nYRadius=%d -D nFiltInitX=%d -D nFiltInitY=%d "
-            "-D PI=%010ff -D outType=%s -D dstMinVal=%010ff -D dstMaxVal=%010ff "
+            "-D PI=%015.15lff -D outType=%s -D dstMinVal=%015.15lff -D dstMaxVal=%015.15lff "
             "-D useDstNoDataReal=%d -D vecf=%s %s -D doCubicSpline=%d "
             "-D useUseBandSrcValid=%d -D iCoordMult=%d",
             warper->srcWidth, warper->srcHeight, warper->dstWidth, warper->dstHeight,
