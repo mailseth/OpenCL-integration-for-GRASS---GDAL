@@ -909,20 +909,7 @@ int INPUT_part(int offset, double *zmax)
             horizonbuf = (FCELL **) G_malloc(sizeof(FCELL *) * arrayNumInt);
             fd_shad = (int *)G_malloc(sizeof(int) * arrayNumInt);
         }
-        /*
-         * if(ttime != NULL)
-         * {
-         * 
-         * horizonbuf[0]=Rast_allocate_f_buf();
-         * sprintf(shad_filename, "%s_%02d", horizon, arrayNumInt);
-         * if((mapset=G_find_raster2(shad_filename,""))==NULL)
-         * G_message("Horizon file no. %d not found\n", arrayNumInt);
-         * 
-         * fd_shad[0] = Rast_open_old(shad_filename,mapset);
-         * }
-         * else
-         * {
-         */
+
         numDigits = (int)(log10(1. * arrayNumInt)) + 1;
         sprintf(formatString, "%%s_%%0%dd", numDigits);
         for (i = 0; i < arrayNumInt; i++) {
@@ -930,12 +917,6 @@ int INPUT_part(int offset, double *zmax)
             sprintf(shad_filename, formatString, horizon, i);
             fd_shad[i] = Rast_open_old(shad_filename, "");
         }
-    }
-    /*
-     * }
-     */
-    
-    if (useHorizonData()) {
         
         for (i = 0; i < arrayNumInt; i++) {
             for (row = m - offset - 1; row >= finalRow; row--) {
@@ -1413,7 +1394,7 @@ void joules2(struct SunGeometryConstDay *sunGeom,
             com_par(sunGeom, sunVarGeom, gridGeom, latitude, longitude);
             s0 = lumcline2(sunGeom, sunVarGeom, sunSlopeGeom, gridGeom,
                            horizonpointer);
-
+            
             if (sunVarGeom->solarAltitude > 0.) {
                 
                 if ((!sunVarGeom->isShadow) && (s0 > 0.)) {
@@ -1436,7 +1417,6 @@ void joules2(struct SunGeometryConstDay *sunGeom,
                     rr = 0.;
                 }
             }			/* illuminated */
-            
             
             sunGeom->timeAngle = sunGeom->timeAngle + dfr_rad;
             
@@ -1806,6 +1786,64 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
         setTimeOffset(0.);
     }
     
+    struct OCLCalc *oclCalc = NULL;
+    struct OCLConstants *oclConst = NULL;
+    int useOpenCL = TRUE;
+    
+    if (useOpenCL) {
+        cl_int err;
+        oclConst = (struct OCLConstants *)G_malloc(sizeof(struct OCLConstants));
+        
+        oclConst->invstepx = invstepx;
+        oclConst->invstepy = invstepy;
+        oclConst->xmin = xmin;
+        oclConst->ymin = ymin;
+        oclConst->xmax = xmax;
+        oclConst->ymax = ymax;
+        oclConst->civilTime = civilTime;
+        oclConst->tim = tim;
+        oclConst->step = step;
+        oclConst->horizonStep = horizonStep;
+        oclConst->singleLinke = singleLinke;
+        oclConst->singleAlbedo = singleAlbedo;
+        oclConst->singleSlope = singleSlope;
+        oclConst->singleAspect = singleAspect;
+        oclConst->cbh = cbh;
+        oclConst->cdh = cdh;
+        oclConst->dist = dist;
+        oclConst->TOLER = TOLER;
+        oclConst->offsetx = offsetx;
+        oclConst->offsety = offsety;
+        oclConst->declination = declination;
+        oclConst->n = n;
+        oclConst->m = m;
+        oclConst->saveMemory = saveMemory;
+        oclConst->day = day;
+        oclConst->ttime = ttime != NULL;
+        oclConst->numPartitions = numPartitions;
+        oclConst->proj_eq_ll = G_projection() == PROJECTION_LL;
+        oclConst->someRadiation = someRadiation;
+        oclConst->numRows = numRows;
+        oclConst->ll_correction = ll_correction;
+        oclConst->aspin = aspin != NULL;
+        oclConst->slopein = slopein != NULL;
+        oclConst->linkein = linkein != NULL;
+        oclConst->albedo = albedo != NULL;
+        oclConst->latin = latin != NULL;
+        oclConst->longin = longin != NULL;
+        oclConst->coefbh = coefbh != NULL;
+        oclConst->coefdh = coefdh != NULL;
+        oclConst->incidout = incidout != NULL;
+        oclConst->beam_rad = beam_rad != NULL;
+        oclConst->insol_time = insol_time != NULL;
+        oclConst->diff_rad = diff_rad != NULL;
+        oclConst->refl_rad = refl_rad != NULL;
+        oclConst->glob_rad = glob_rad != NULL;
+        oclConst->degreeInMeters = DEGREEINMETERS;
+        
+        oclCalc = make_environ_cl(oclConst, &sunRadVar, &sunGeom, &gridGeom, &err);
+    }
+    
     for (j = 0; j < m; j++) {
         G_percent(j, m - 1, 2);
         
@@ -1815,77 +1853,28 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
             shadowoffset = 0;
             sunVarGeom.zmax = zmax;
             
-            if (1) { // Use OpenCL?
-                struct OCLConstants oclConst;
-                oclConst.invstepx = invstepx;
-                oclConst.invstepy = invstepy;
-                oclConst.xmin = xmin;
-                oclConst.ymin = ymin;
-                oclConst.xmax = xmax;
-                oclConst.ymax = ymax;
-                oclConst.civilTime = civilTime;
-                oclConst.tim = tim;
-                oclConst.step = step;
-                oclConst.horizonStep = horizonStep;
-                oclConst.singleLinke = singleLinke;
-                oclConst.singleAlbedo = singleAlbedo;
-                oclConst.singleSlope = singleSlope;
-                oclConst.singleAspect = singleAspect;
-                oclConst.cbh = cbh;
-                oclConst.cdh = cdh;
-                oclConst.dist = dist;
-                oclConst.TOLER = TOLER;
-                oclConst.offsetx = offsetx;
-                oclConst.offsety = offsety;
-                oclConst.declination = declination;
-                oclConst.zmax = zmax;
-                oclConst.n = n;
-                oclConst.m = m;
-                oclConst.j = j;
-                oclConst.saveMemory = saveMemory;
-                oclConst.day = day;
-                oclConst.ttime = ttime != NULL;
-                oclConst.numPartitions = numPartitions;
-                oclConst.proj_eq_ll = G_projection() == PROJECTION_LL;
-                oclConst.someRadiation = someRadiation;
-                oclConst.numRows = numRows;
-                oclConst.ll_correction = ll_correction;
-                oclConst.aspin = aspin != NULL;
-                oclConst.slopein = slopein != NULL;
-                oclConst.linkein = linkein != NULL;
-                oclConst.albedo = albedo != NULL;
-                oclConst.latin = latin != NULL;
-                oclConst.longin = longin != NULL;
-                oclConst.coefbh = coefbh != NULL;
-                oclConst.coefdh = coefdh != NULL;
-                oclConst.incidout = incidout != NULL;
-                oclConst.beam_rad = beam_rad != NULL;
-                oclConst.insol_time = insol_time != NULL;
-                oclConst.diff_rad = diff_rad != NULL;
-                oclConst.refl_rad = refl_rad != NULL;
-                oclConst.glob_rad = glob_rad != NULL;
-                oclConst.degreeInMeters = DEGREEINMETERS;
-				
-                calculate_core_cl(n, numRows,
-                                  &oclConst, &sunRadVar, &sunGeom, &gridGeom,
+            if (useOpenCL) { // Use OpenCL?
+                calculate_core_cl(j, oclCalc, oclConst, &gridGeom,
                                   horizonarray, z, o, s, li, a,
                                   latitudeArray, longitudeArray, cbhr, cdhr,
                                   &(lumcl[j]), &(beam[j]), &(insol[j]),
                                   &(diff[j]), &(refl[j]), &(globrad[j]) );
+                /*
+                linke_max = AMAX1(linke_max, oclConst->linke_max);
+                linke_min = AMIN1(linke_min, oclConst->linke_min);
+                albedo_max = AMAX1(albedo_max, oclConst->albedo_max);
+                albedo_min = AMIN1(albedo_min, oclConst->albedo_min);
+                lat_max = AMAX1(lat_max, oclConst->lat_max);
+                lat_min = AMIN1(lat_min, oclConst->lat_min);
+                sunrise_max = AMAX1(sunrise_max, oclConst->sunrise_max);
+                sunrise_min = AMIN1(sunrise_min, oclConst->sunrise_min);
+                sunset_max = AMAX1(sunset_max, oclConst->sunset_max);
+                sunset_min = AMIN1(sunset_min, oclConst->sunset_min);
                 
-                linke_max = AMAX1(linke_max, oclConst.linke_max);
-                linke_min = AMIN1(linke_min, oclConst.linke_min);
-                albedo_max = AMAX1(albedo_max, oclConst.albedo_max);
-                albedo_min = AMIN1(albedo_min, oclConst.albedo_min);
-                lat_max = AMAX1(lat_max, oclConst.lat_max);
-                lat_min = AMIN1(lat_min, oclConst.lat_min);
-//                lon_max = oclConst.lon_max;
-//                lon_min = oclConst.lon_min;
-                sunrise_max = AMAX1(sunrise_max, oclConst.sunrise_max);
-                sunrise_min = AMIN1(sunrise_min, oclConst.sunrise_min);
-                sunset_max = AMAX1(sunset_max, oclConst.sunset_max);
-                sunset_min = AMIN1(sunset_min, oclConst.sunset_min);
-                
+                printf("(%f %f) (%f %f)\n",
+                       oclConst->sunrise_min, oclConst->sunrise_max,
+                       oclConst->sunset_min, oclConst->sunset_max);
+                */
                 j += numRows-1;
                 continue;
             }
@@ -2030,6 +2019,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                     joules2(&sunGeom, &sunVarGeom, &sunSlopeGeom, &sunRadVar,
                             &gridGeom, horizonarray + shadowoffset, latitude,
                             longitude);
+                    
                     if (beam_rad != NULL)
                         beam[j][i] = (float)beam_e;
                     if (insol_time != NULL)
@@ -2047,6 +2037,11 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
         }
         arrayOffset++;
     }
+    
+    if (oclCalc != NULL)
+        free_environ_cl(oclCalc);
+    if (oclConst != NULL)
+        G_free(oclConst);
     
     /* re-use &hist, but try all to initiate it for any case */
     /*   note this will result in incorrect map titles       */
@@ -2106,6 +2101,11 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                                    sunGeom.sunset_time - sunGeom.sunrise_time);
     }
     else {
+        G_verbose_message(_(" Sunrise time min-max (hr.):               %.2f - %.2f"),
+                          sunrise_min, sunrise_max);
+        G_verbose_message(_(" Sunset time min-max (hr.):                %.2f - %.2f"),
+                            sunset_min, sunset_max);
+        
         Rast_append_format_history(&hist,
                                    " Sunrise time min-max (hr.):               %.2f - %.2f",
                                    sunrise_min, sunrise_max);
