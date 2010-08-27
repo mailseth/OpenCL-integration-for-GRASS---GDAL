@@ -1859,7 +1859,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                                   latitudeArray, longitudeArray, cbhr, cdhr,
                                   &(lumcl[j]), &(beam[j]), &(insol[j]),
                                   &(diff[j]), &(refl[j]), &(globrad[j]) );
-                /*
+                
                 linke_max = AMAX1(linke_max, oclConst->linke_max);
                 linke_min = AMIN1(linke_min, oclConst->linke_min);
                 albedo_max = AMAX1(albedo_max, oclConst->albedo_max);
@@ -1870,11 +1870,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 sunrise_min = AMIN1(sunrise_min, oclConst->sunrise_min);
                 sunset_max = AMAX1(sunset_max, oclConst->sunset_max);
                 sunset_min = AMIN1(sunset_min, oclConst->sunset_min);
-                
-                printf("(%f %f) (%f %f)\n",
-                       oclConst->sunrise_min, oclConst->sunrise_max,
-                       oclConst->sunset_min, oclConst->sunset_max);
-                */
+
                 j += numRows-1;
                 continue;
             }
@@ -2103,7 +2099,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
     else {
         G_verbose_message(_(" Sunrise time min-max (hr.):               %.2f - %.2f"),
                           sunrise_min, sunrise_max);
-        G_verbose_message(_(" Sunset time min-max (hr.):                %.2f - %.2f"),
+        G_verbose_message(_(" Sunset  time min-max (hr.):               %.2f - %.2f"),
                             sunset_min, sunset_max);
         
         Rast_append_format_history(&hist,
