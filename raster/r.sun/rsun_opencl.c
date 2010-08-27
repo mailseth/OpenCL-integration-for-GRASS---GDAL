@@ -41,6 +41,10 @@
     return NULL; \
 }
 
+/*
+ Handle a OpenCL error by printing the file, line, then error. The trigger a
+ fatal error.
+ */
 void printCLErr(char *fName, unsigned int lineNum, cl_int err)
 {
     char *errStr = "";
@@ -211,6 +215,10 @@ int ext_supported(cl_device_id dev, char *extName)
 }
 
 /*
+ Print a list of OpenCL devices connected to this host. This list could be
+ presented to the user so the user can select the appropriate device. This
+ allows different devices to be used by different threads or selection of
+ a fp64 device when needed.
  */
 cl_int printDevList()
 {
@@ -245,46 +253,72 @@ cl_int printDevList()
 }
 
 /*
- Finds an appropirate OpenCL device. If the user specifies a preference, the
- code for it should be here (but not currently supported). For debugging, it's
- always easier to use CL_DEVICE_TYPE_CPU because then printf() can be called
- from the kernel. If debugging is on, we can print the name and stats about the
- device we're using.
+ Finds an appropirate OpenCL device. If the user specifies a preference, we pick
+ that device index from the list. If we are left to a default device, we'll print
+ the table of available devices. For debugging, it's always easier to use
+ CL_DEVICE_TYPE_CPU because then printf() can be called from the kernel. If
+ debugging is on, we can print the name and stats about the device we're using.
+ 
+ sug_dev should be an index starting at zero.
  */
-cl_device_id get_device(cl_int *clErr)
+cl_device_id get_device(int sug_dev, cl_int *clErr)
 {
     cl_int err = CL_SUCCESS;
 	cl_device_id device = NULL;
     size_t returned_size = 0;
     cl_char vendor_name[1024] = {0};
     cl_char device_name[1024] = {0};
-    printDevList();
+	cl_device_id dev[32];
+    cl_uint num_dev;
     
-    // Find the GPU CL device, this is what we really want
-    // If there is no GPU device is CL capable, fall back to CPU
-    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-//    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
-    if (err != CL_SUCCESS) {
-        // Find the CPU CL device, as a fallback
-        err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
+    if (sug_dev >= 0 && sug_dev < 32) {
+        err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
         handleErrRetNULL(err);
+        if (num_dev > sug_dev) {
+            device = dev[sug_dev];
+        } else {
+            G_warning(_("Device index %d too large for number of devices (%d)."),
+                      sug_dev, num_dev);
+            return get_device(-1, clErr);
+        }
+    } else {
+        printDevList();
+        
+        // Find the GPU CL device, this is what we really want
+        // If there is no GPU device is CL capable, fall back to CPU
+        err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+        if (err != CL_SUCCESS) {
+            // Find the CPU CL device, as a fallback
+            err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
+            handleErrRetNULL(err);
+        }
     }
     
     // Get some information about the returned device
     err = clGetDeviceInfo(device, CL_DEVICE_VENDOR, sizeof(vendor_name), 
                           vendor_name, &returned_size);
+    // Fall back to default if invalid
+    if (err == CL_INVALID_DEVICE && sug_dev != -1) {
+        G_warning(_("Selected device %d is invalid. Defaulting..."), sug_dev);
+        return get_device(-1, clErr);
+    }
     handleErrRetNULL(err);
+    
     err = clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), 
                           device_name, &returned_size);
     handleErrRetNULL(err);
+    
     G_message(_("OpenCL enabled using %s %s..."), vendor_name, device_name);
     
     return device;
 }
 
 /*
+ Figure out how many threads to make per group. This takes into account the
+ number of partitions we've divided our global group into. It returns the
+ number of threads per group.
  */
-size_t get_groups_threads(size_t num_threads, size_t group_size,
+size_t get_thread_group(size_t num_threads, size_t group_size,
                         unsigned int num_partitions)
 {
     size_t par_threads;
@@ -328,7 +362,7 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
     int i;
     size_t start_time = 0, end_time;
     double tot_time = 0.0;
-    size_t glob_size = get_groups_threads(num_threads, group_size, num_partitions);
+    size_t glob_size = get_thread_group(num_threads, group_size, num_partitions);
     handleErr(err = clSetCommandQueueProperty(calc->queue, CL_QUEUE_PROFILING_ENABLE,
                                               CL_TRUE, NULL));
     
@@ -343,6 +377,13 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
         // command queue to complete the task
         handleErr(err = clEnqueueNDRangeKernel(calc->queue, kern, 1, NULL, 
                                                &glob_size, &group_size, 0, NULL, &ev));
+        if (err == CL_MEM_OBJECT_ALLOCATION_FAILURE)
+            G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
+        if (err == CL_INVALID_COMMAND_QUEUE)
+            G_fatal_error(_("Kernel crashed. If this happened after the screen froze, "
+                            "the GPU's watchdog timer may have been triggered. Try increasing "
+                            "the number of partitions on the command line or "
+                            "NUM_OPENCL_PARTITIONS in %s and recompile."), __FILE__);
         handleErr(err = clFinish(calc->queue));
         
         handleErr(err = clGetEventProfilingInfo(ev, CL_PROFILING_COMMAND_START,
@@ -421,6 +462,8 @@ cl_int make_input_raster_cl(struct OCLCalc *calc, unsigned int x, unsigned int y
         unsigned int sz = sizeof(float) * numThreads;
         assert(sz >= 0);
         (*dst_cl) = clCreateBuffer(calc->context, CL_MEM_READ_ONLY, sz, NULL, &err);
+        if (err == CL_INVALID_BUFFER_SIZE)
+            G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
         handleErr(err);
         cl_mem src_work_cl = clCreateBuffer(calc->context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sz, NULL, &err);
         handleErr(err);
@@ -538,7 +581,7 @@ cl_int make_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
 {
     cl_int err;
     int numThreads = oclConst->numRows * oclConst->n;
-    size_t glob_size = get_groups_threads(numThreads, calc->calcGroupSize, NUM_OPENCL_PARTITIONS);
+    size_t glob_size = get_thread_group(numThreads, calc->calcGroupSize, NUM_OPENCL_PARTITIONS);
     size_t grp_stride = NUM_OPENCL_PARTITIONS * glob_size / calc->calcGroupSize;
     size_t num_grps;
     
@@ -548,9 +591,11 @@ cl_int make_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
         num_grps = numThreads / calc->calcGroupSize;
         
     // Allocate full buffers
-    size_t sz = sizeof(float) * 12 * grp_stride;
+    size_t sz = sizeof(float) * 22 * grp_stride;
     assert(sz >= 0);
     (*min_max_cl) = clCreateBuffer(calc->context, CL_MEM_READ_WRITE, sz, NULL, &err);
+    if (err == CL_INVALID_BUFFER_SIZE)
+        G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
     handleErr(err);
     
     // Set it up as an argument
@@ -578,7 +623,7 @@ cl_int copy_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
                        cl_mem min_max_cl)
 {
     cl_int err;
-    size_t glob_size = get_groups_threads(oclConst->numRows * oclConst->n, calc->calcGroupSize, NUM_OPENCL_PARTITIONS);
+    size_t glob_size = get_thread_group(oclConst->numRows * oclConst->n, calc->calcGroupSize, NUM_OPENCL_PARTITIONS);
     size_t stride_sz = sizeof(float) * NUM_OPENCL_PARTITIONS * glob_size / calc->calcGroupSize;
     
     // Copy data back to GRASS, one value at a time
@@ -631,6 +676,46 @@ cl_int copy_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
                               sizeof(float), &(oclConst->sunset_max), 0, NULL, NULL);
     handleErr(err);
     
+    // Beam
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*12,
+                              sizeof(float), &(oclConst->beam_min), 0, NULL, NULL);
+    handleErr(err);
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*13,
+                              sizeof(float), &(oclConst->beam_max), 0, NULL, NULL);
+    handleErr(err);
+    
+    // Diffuse
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*14,
+                              sizeof(float), &(oclConst->diff_min), 0, NULL, NULL);
+    handleErr(err);
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*15,
+                              sizeof(float), &(oclConst->diff_max), 0, NULL, NULL);
+    handleErr(err);
+
+    // Reflected
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*16,
+                              sizeof(float), &(oclConst->refl_min), 0, NULL, NULL);
+    handleErr(err);
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*17,
+                              sizeof(float), &(oclConst->refl_max), 0, NULL, NULL);
+    handleErr(err);
+    
+    // Insolation Time
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*18,
+                              sizeof(float), &(oclConst->insol_min), 0, NULL, NULL);
+    handleErr(err);
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*19,
+                              sizeof(float), &(oclConst->insol_max), 0, NULL, NULL);
+    handleErr(err);
+    
+    // Global
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*20,
+                              sizeof(float), &(oclConst->globrad_min), 0, NULL, NULL);
+    handleErr(err);
+    err = clEnqueueReadBuffer(calc->queue, min_max_cl, CL_FALSE, stride_sz*21,
+                              sizeof(float), &(oclConst->globrad_max), 0, NULL, NULL);
+    handleErr(err);
+    
     //Make sure we're done before releasing the memory
     handleErr(err = clFinish(calc->queue));
 
@@ -666,6 +751,10 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     char *useDouble = "";
     
     const char *kernFunc =
+/*
+ There are a handful of places that floating point precision becomes a bit
+ insufficent. It's best to use double precision there if possible.
+ */
 "#ifdef useDouble\n"
 "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n"
 "#define BEST_FP double\n"
@@ -674,7 +763,12 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 "#endif\n"
 
 /*
- min_reduce_and_store() & max_reduce_and_store() 
+ min_reduce_and_store() & max_reduce_and_store() take a value, store it in very
+ fast local memory, and then all of the threads of the group reduce it down to
+ a single value. That value is then stored in global memory. Note that this
+ function has been optimized so that the group size must be a power of two.
+ This function is much faster than the atomic functions, but has overhead in the
+ form of local memory storage & register usage.
  */
 "void max_reduce_and_store(__local float *sdata,\n"
                             "__global float *store_arr,\n"
@@ -806,19 +900,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 "{\n"
     "if (get_group_id(0) != 0)\n"
         "return;\n"
-    
-    "global_min_and_reduce(reduce_s, min_max,           0, orig_gnum);\n"
-    "global_max_and_reduce(reduce_s, min_max,   grp_stride, orig_gnum);\n"
-    "global_min_and_reduce(reduce_s, min_max, 2*grp_stride, orig_gnum);\n"
-    "global_max_and_reduce(reduce_s, min_max, 3*grp_stride, orig_gnum);\n"
-    "global_min_and_reduce(reduce_s, min_max, 4*grp_stride, orig_gnum);\n"
-    "global_max_and_reduce(reduce_s, min_max, 5*grp_stride, orig_gnum);\n"
-    "global_min_and_reduce(reduce_s, min_max, 6*grp_stride, orig_gnum);\n"
-    "global_max_and_reduce(reduce_s, min_max, 7*grp_stride, orig_gnum);\n"
-    "global_min_and_reduce(reduce_s, min_max, 8*grp_stride, orig_gnum);\n"
-    "global_max_and_reduce(reduce_s, min_max, 9*grp_stride, orig_gnum);\n"
-    "global_min_and_reduce(reduce_s, min_max,10*grp_stride, orig_gnum);\n"
-    "global_max_and_reduce(reduce_s, min_max,11*grp_stride, orig_gnum);\n"
+    "int i;\n"
+    "for (i = 0; i < 22; i += 2) {\n"
+        "global_min_and_reduce(reduce_s, min_max, i   *grp_stride, orig_gnum);\n"
+        "global_max_and_reduce(reduce_s, min_max,(i+1)*grp_stride, orig_gnum);\n"
+    "}\n"
 "}\n"
 
 /*
@@ -1258,6 +1344,10 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "float linke, alb;\n"
     "float latitude, longitude;\n"
     "float sunGeom_sunrise_time, sunGeom_sunset_time;\n"
+    "BEST_FP beam_e = 0.0;\n"
+    "BEST_FP diff_e = 0.0;\n"
+    "BEST_FP refl_e = 0.0;\n"
+    "BEST_FP insol_t = 0.0;\n"
     
     //Don't overrun arrays
 	//Skip if no elevation info
@@ -1356,10 +1446,6 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     
          "if (someRadiation) {\n"
             //joules2() is inlined so I don't need to pass in basically *everything*
-            "BEST_FP beam_e = 0.0;\n"
-            "BEST_FP diff_e = 0.0;\n"
-            "BEST_FP refl_e = 0.0;\n"
-            "BEST_FP insol_t = 0.0;\n"
             "int insol_count = 0;\n"
             
             "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
@@ -1469,12 +1555,14 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                     "++passNum;\n"
                 "} while (sunGeom_timeAngle <= lastAngle);\n" // we've got the sunset
             "}\n"				// all-day radiation
+    
+            "insol_t = timeStep*insol_count;\n"
             
             //Only apply values to where they're wanted
             "if(beam_rad)\n"
                 "beam[gid] = beam_e;\n"
             "if(insol_time)\n"
-               "insol[gid] = timeStep*insol_count;\n"
+               "insol[gid] = insol_t;\n"
             "if(diff_rad)\n"
                 "diff[gid] = diff_e;\n"
             "if(refl_rad)\n"
@@ -1487,6 +1575,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "int gnum = get_num_groups(0)*NUM_OPENCL_PARTITIONS;\n"
     "int gpid = get_group_id(0)+partNum*get_num_groups(0);\n"
     "int isValid = gid < gsz && sunVarGeom_z_orig != UNDEFZ;\n"
+    "float global_e = beam_e + diff_e + refl_e;\n"
     
     //This gets ugly because all threads must enter *_reduce_and_store() for it
     //to work properly, and we must give invalid values for each if invalid source
@@ -1512,24 +1601,44 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "longitude = 180.0f;\n"
         "sunGeom_sunrise_time = 24.0f;\n"
         "sunGeom_sunset_time = 24.0f;\n"
+        "beam_e = MAXFLOAT;\n"
+        "diff_e = MAXFLOAT;\n"
+        "refl_e = MAXFLOAT;\n"
+        "insol_t = MAXFLOAT;\n"
+        "global_e = MAXFLOAT;\n"
     "}\n"
-    
+
     "min_reduce_and_store(reduce_s, min_max, latitude, 4*gnum+gpid);\n"
     "min_reduce_and_store(reduce_s, min_max, longitude, 6*gnum+gpid);\n"
     "min_reduce_and_store(reduce_s, min_max, sunGeom_sunrise_time, 8*gnum+gpid);\n"
     "min_reduce_and_store(reduce_s, min_max, sunGeom_sunset_time, 10*gnum+gpid);\n"
+    "min_reduce_and_store(reduce_s, min_max, beam_e, 12*gnum+gpid);\n"
+    "min_reduce_and_store(reduce_s, min_max, diff_e, 14*gnum+gpid);\n"
+    "min_reduce_and_store(reduce_s, min_max, refl_e, 16*gnum+gpid);\n"
+    "min_reduce_and_store(reduce_s, min_max, insol_t, 18*gnum+gpid);\n"
+    "min_reduce_and_store(reduce_s, min_max, global_e, 20*gnum+gpid);\n"
     
     "if (!isValid) {\n"
         "latitude = -90.0f;\n"
         "longitude = -180.0f;\n"
         "sunGeom_sunrise_time = 0.0f;\n"
         "sunGeom_sunset_time = 0.0f;\n"
+        "beam_e = 0.0f;\n"
+        "diff_e = 0.0f;\n"
+        "refl_e = 0.0f;\n"
+        "insol_t = 0.0f;\n"
+        "global_e = 0.0f;\n"
     "}\n"
     
     "max_reduce_and_store(reduce_s, min_max, latitude, 5*gnum+gpid);\n"
     "max_reduce_and_store(reduce_s, min_max, longitude, 7*gnum+gpid);\n"
     "max_reduce_and_store(reduce_s, min_max, sunGeom_sunrise_time, 9*gnum+gpid);\n"
     "max_reduce_and_store(reduce_s, min_max, sunGeom_sunset_time, 11*gnum+gpid);\n"
+    "max_reduce_and_store(reduce_s, min_max, beam_e, 13*gnum+gpid);\n"
+    "max_reduce_and_store(reduce_s, min_max, diff_e, 15*gnum+gpid);\n"
+    "max_reduce_and_store(reduce_s, min_max, refl_e, 17*gnum+gpid);\n"
+    "max_reduce_and_store(reduce_s, min_max, insol_t, 19*gnum+gpid);\n"
+    "max_reduce_and_store(reduce_s, min_max, global_e, 21*gnum+gpid);\n"
 "}\n";
 
     //Actually make the program from assembled source
@@ -1633,18 +1742,21 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 }
 
 /*
+ Make a struct containing the constant values between partitions, the compiled
+ kernel, group sizes, device id, queue, & context.
  */
 struct OCLCalc *make_environ_cl(struct OCLConstants *oclConst,
                                 struct SolarRadVar *sunRadVar,
                                 struct SunGeometryConstDay *sunGeom,
                                 struct GridGeometry *gridGeom,
+                                int sugDev,
                                 cl_int *clErr )
 {
     cl_int err;
 	size_t groupSize;
     struct OCLCalc *calc = (struct OCLCalc *)malloc(sizeof(struct OCLCalc));
     
-    calc->dev = get_device(&err);
+    calc->dev = get_device(sugDev, &err);
     
     // Now create a context to perform our calculation with the specified device 
     calc->context = clCreateContext(0, 1, &(calc->dev), NULL, NULL, &err);
@@ -1700,6 +1812,7 @@ struct OCLCalc *make_environ_cl(struct OCLConstants *oclConst,
 }
 
 /*
+ Release all constant values in the calculator structure
  */
 cl_int free_environ_cl(struct OCLCalc *oclCalc)
 {
@@ -1792,7 +1905,7 @@ cl_int calculate_core_cl(unsigned int partOff,
 			
 			//Do the conversion for the row
 			if (pj_do_transform(xDim, xCoords, yCoords, hCoords, &iproj, &oproj) < 0)
-				G_fatal_error("Error in pj_do_transform");
+				G_fatal_error(_("Error in pj_do_transform"));
 			
 			//Read them from doubles into floats
 			for (j = 0; j < xDim; ++j) {

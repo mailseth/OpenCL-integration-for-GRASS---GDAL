@@ -116,7 +116,7 @@ void joules2(struct SunGeometryConstDay *sunGeom,
 
 void calculate(double singleSlope, double singleAspect,
                double singleAlbedo, double singleLinke,
-               struct GridGeometry gridGeom);
+               struct GridGeometry gridGeom, int sugDev);
 double com_declin(int);
 
 int n, m, ip, jp;
@@ -131,6 +131,7 @@ float **z = NULL, **o = NULL, **s = NULL, **li = NULL, **a = NULL,
 double op, dp;
 double invstepx, invstepy;
 double sunrise_min = 24., sunrise_max = 0., sunset_min = 24., sunset_max = 0.;
+int opencl_dev = -1;
 
 float **lumcl, **beam, **insol, **diff, **refl, **globrad;
 unsigned char *horizonarray = NULL;
@@ -145,6 +146,9 @@ double linke_max = 0., linke_min = 100., albedo_max = 0., albedo_min = 1.0,
 lat_max = -90., lat_min = 90.;
 double offsetx = 0.5, offsety = 0.5;
 char *ttime;
+double beam_max = 0., beam_min = BIG, insol_max = 0., insol_min = BIG,
+        diff_max = 0., diff_min = BIG, refl_max = 0., refl_min = BIG,
+        globrad_max = 0., globrad_min = BIG;
 
 /*
  * double slope;
@@ -221,7 +225,7 @@ int main(int argc, char *argv[])
 	    *lin, *albedo, *longin, *alb, *latin, *coefbh, *coefdh,
 	    *incidout, *beam_rad, *insol_time, *diff_rad, *refl_rad,
 	    *glob_rad, *day, *step, *declin, *ltime, *dist, *horizon,
-	    *horizonstep, *numPartitions, *civilTime;
+	    *horizonstep, *numPartitions, *civilTime, *opencl_dev;
     }
     parm;
     
@@ -521,6 +525,15 @@ int main(int argc, char *argv[])
     flag.saveMemory->description =
 	_("Use the low-memory version of the program");
     
+    //Is OpenCL enabled?
+    if (1) {
+        parm.opencl_dev = G_define_option();
+        parm.opencl_dev->key = "opencl_dev";
+        parm.opencl_dev->type = TYPE_INTEGER;
+        parm.opencl_dev->required = NO;
+        parm.opencl_dev->answer = "-1";
+        parm.opencl_dev->description = _("If using OpenCL, the device number to use.");
+    }
     
     if (G_parser(argc, argv))
         exit(EXIT_FAILURE);
@@ -760,6 +773,10 @@ int main(int argc, char *argv[])
     if (latin != NULL && longin == NULL)
         G_fatal_error(_("Both latin and longin raster maps must be given, or neither"));
     
+    if (parm.opencl_dev->answer != NULL &&
+        sscanf(parm.opencl_dev->answer, "%d", &opencl_dev) != 1)
+            G_fatal_error(_("Error reading OpenCL device."));
+    
     /**********end of parser - ******************************/
     
     
@@ -767,7 +784,7 @@ int main(int argc, char *argv[])
         ll_correction = TRUE;
     
     G_debug(3, "calculate() starts...");
-    calculate(singleSlope, singleAspect, singleAlbedo, singleLinke, gridGeom);
+    calculate(singleSlope, singleAspect, singleAlbedo, singleLinke, gridGeom, opencl_dev-1);
     G_debug(3, "OUTGR() starts...");
     OUTGR();
     
@@ -1655,7 +1672,7 @@ void cube(jmin, imin)
 /*////////////////////////////////////////////////////////////////////// */
 
 void calculate(double singleSlope, double singleAspect, double singleAlbedo,
-               double singleLinke, struct GridGeometry gridGeom)
+               double singleLinke, struct GridGeometry gridGeom, int sugDev )
 {
     int i, j, l;
     
@@ -1841,7 +1858,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
         oclConst->glob_rad = glob_rad != NULL;
         oclConst->degreeInMeters = DEGREEINMETERS;
         
-        oclCalc = make_environ_cl(oclConst, &sunRadVar, &sunGeom, &gridGeom, &err);
+        oclCalc = make_environ_cl(oclConst, &sunRadVar, &sunGeom, &gridGeom, sugDev, &err);
     }
     
     for (j = 0; j < m; j++) {
@@ -1870,7 +1887,17 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 sunrise_min = AMIN1(sunrise_min, oclConst->sunrise_min);
                 sunset_max = AMAX1(sunset_max, oclConst->sunset_max);
                 sunset_min = AMIN1(sunset_min, oclConst->sunset_min);
-
+                beam_min = AMIN1(beam_min, oclConst->beam_min);
+                beam_max = AMAX1(beam_max, oclConst->beam_max);
+                insol_min = AMIN1(insol_min, oclConst->insol_min);
+                insol_max = AMAX1(insol_max, oclConst->insol_max);
+                diff_min = AMIN1(diff_min, oclConst->diff_min);
+                diff_max = AMAX1(diff_max, oclConst->diff_max);
+                refl_min = AMIN1(refl_min, oclConst->refl_min);
+                refl_max = AMAX1(refl_max, oclConst->refl_max);
+                globrad_min = AMIN1(globrad_min, oclConst->globrad_min);
+                globrad_max = AMAX1(globrad_max, oclConst->globrad_max);
+                
                 j += numRows-1;
                 continue;
             }
@@ -2027,6 +2054,17 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                         refl[j][i] = (float)refl_e;
                     if (glob_rad != NULL)
                         globrad[j][i] = (float)(beam_e + diff_e + refl_e);
+                    
+                    beam_min = AMIN1(beam_min, beam_e);
+                    beam_max = AMAX1(beam_max, beam_e);
+                    insol_min = AMIN1(insol_min, insol_t);
+                    insol_max = AMAX1(insol_max, insol_t);
+                    diff_min = AMIN1(diff_min, diff_e);
+                    diff_max = AMAX1(diff_max, diff_e);
+                    refl_min = AMIN1(refl_min, refl_e);
+                    refl_max = AMAX1(refl_max, refl_e);
+                    globrad_min = AMIN1(globrad_min, globrad[j][i]);
+                    globrad_max = AMAX1(globrad_max, globrad[j][i]);
                 }
             }			/* undefs */
             shadowoffset += arrayNumInt;
@@ -2097,9 +2135,9 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                                    sunGeom.sunset_time - sunGeom.sunrise_time);
     }
     else {
-        G_verbose_message(_(" Sunrise time min-max (hr.):               %.2f - %.2f"),
+        G_verbose_message(_("Sunrise time min-max (hr.):               %.2f - %.2f"),
                           sunrise_min, sunrise_max);
-        G_verbose_message(_(" Sunset  time min-max (hr.):               %.2f - %.2f"),
+        G_verbose_message(_("Sunset  time min-max (hr.):               %.2f - %.2f"),
                             sunset_min, sunset_max);
         
         Rast_append_format_history(&hist,
@@ -2138,6 +2176,46 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
         Rast_append_format_history(&hist,
                                    " Ground albedo min-max:                    %.3f-%.3f",
                                    albedo_min, albedo_max);
+    
+    if (someRadiation) {
+        char * radUnits = "";
+        if (ttime == NULL)
+            radUnits = "irradiation min-max [Wh.m-2.day-1]";
+        else
+            radUnits = "irradiance min-max [W.m-2]";
+        
+        Rast_append_format_history(&hist,
+                                   " Beam %s:                    %.3f-%.3f",
+                                   radUnits, beam_min, beam_max);
+        G_verbose_message(_("Beam %s:               %.2f - %.2f"),
+                          radUnits, sunrise_min, sunrise_max);
+        
+        if (ttime == NULL) {
+            Rast_append_format_history(&hist,
+                                       " Insolation time min-max [h]:                    %.3f-%.3f",
+                                       insol_min, insol_max);
+            G_verbose_message(_("Insolation time min-max [h]:               %.2f - %.2f"),
+                              insol_min, insol_max);
+        }
+        
+        Rast_append_format_history(&hist,
+                                   " Diffuse %s:                    %.3f-%.3f",
+                                   radUnits, diff_min, diff_max);
+        G_verbose_message(_("Diffuse %s:               %.2f - %.2f"),
+                          radUnits, diff_min, diff_max);
+        
+        Rast_append_format_history(&hist,
+                                   " Ground reflected %s:                    %.3f-%.3f",
+                                   radUnits, refl_min, refl_max);
+        G_verbose_message(_("Ground reflected %s:               %.2f - %.2f"),
+                          radUnits, refl_min, refl_max);
+        
+        Rast_append_format_history(&hist,
+                                   " Global (total) %s:                    %.3f-%.3f",
+                                   radUnits, globrad_min, globrad_max);
+        G_verbose_message(_("Global (total) %s:               %.2f - %.2f"),
+                          radUnits, globrad_min, globrad_max);
+    }
     
     Rast_append_format_history(&hist,
                                " -----------------------------------------------------------------");
