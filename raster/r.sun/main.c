@@ -1871,6 +1871,8 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
             sunVarGeom.zmax = zmax;
             
             if (useOpenCL) { // Use OpenCL?
+                oclConst->zmax = zmax;
+                
                 calculate_core_cl(j, oclCalc, oclConst, &gridGeom,
                                   horizonarray, z, o, s, li, a,
                                   latitudeArray, longitudeArray, cbhr, cdhr,

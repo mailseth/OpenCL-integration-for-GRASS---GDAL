@@ -380,7 +380,7 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
         if (err == CL_MEM_OBJECT_ALLOCATION_FAILURE)
             G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
         if (err == CL_INVALID_COMMAND_QUEUE)
-            G_fatal_error(_("Kernel crashed. If this happened after the screen froze, "
+            G_fatal_error(_("Kernel crashed. If this happened after the screen froze for a few seconds, "
                             "the GPU's watchdog timer may have been triggered. Try increasing "
                             "the number of partitions on the command line or "
                             "NUM_OPENCL_PARTITIONS in %s and recompile."), __FILE__);
@@ -602,7 +602,7 @@ cl_int make_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
     handleErr(err = clSetKernelArg(calc->calcKern, 16, sizeof(cl_mem), min_max_cl));
     
     // Make local space for the reduce function, also
-	handleErr(err = clSetKernelArg(calc->calcKern, 18, sizeof(float) * calc->calcGroupSize, NULL));
+	handleErr(err = clSetKernelArg(calc->calcKern, 19, sizeof(float) * calc->calcGroupSize, NULL));
     
     // We can do all consalidate args here, too
     handleErr(err = clSetKernelArg(calc->consKern, 0, sizeof(cl_mem), min_max_cl));
@@ -771,9 +771,9 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
  form of local memory storage & register usage.
  */
 "void max_reduce_and_store(__local float *sdata,\n"
-                            "__global float *store_arr,\n"
-                            "float value,\n"
-                            "int store_off)\n"
+                          "__global float *store_arr,\n"
+                          "float value,\n"
+                          "int store_off)\n"
 "{\n"
     //Note that this draws from NVIDIA's reduction example:
     //- Doesn't use % operator.
@@ -1034,7 +1034,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         //Return *something*
         "return 9999999.9f;\n"
     
-    "*sunVarGeom_zp = z[j*n+i];\n"
+    "*sunVarGeom_zp = z[i + j*n];\n"
     
     //Used to be distance()
     "if (ll_correction) {\n"
@@ -1056,7 +1056,8 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
               "const float sunVarGeom_stepcosangle,\n"
               "const float gridGeom_xg0,\n"
               "const float gridGeom_yg0,\n"
-              "const float coslatsq)\n"
+              "const float coslatsq,\n"
+              "const float zmax)\n"
 "{\n"
     "int success = 0;\n"
     
@@ -1084,10 +1085,8 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
         "if (z2 < *sunVarGeom_zp)\n"
             "success = 2;\n"		// shadow
 
-// Is this needed? It's a bit of a pain to get this variable in here
-// and I'm not sure how useful it is
-//        "if (z2 > zmax)\n"
-//            "success = 3;\n"		// no test needed all visible
+        "if (z2 > zmax)\n"
+            "success = 3;\n"		// no test needed all visible
     "}\n"
     
     "if (success != 1) {\n"
@@ -1117,7 +1116,8 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                 "const float sunSlopeGeom_lum_C33_l,\n"
                 "const float gridGeom_xg0,\n"
                 "const float gridGeom_yg0,\n"
-                "const float coslatsq)\n"
+                "const float coslatsq,\n"
+                "const float zmax)\n"
 "{\n"
     "float s = 0.0f;\n"
     
@@ -1146,7 +1146,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             "do {\n"
                 "r = searching(z, sunVarGeom_zp, gridGeom_xx0, gridGeom_yy0, sunVarGeom_z_orig,\n"
                         "sunVarGeom_tanSolarAltitude, sunVarGeom_stepsinangle,\n"
-                        "sunVarGeom_stepcosangle, gridGeom_yg0, gridGeom_yg0, coslatsq);\n"
+                        "sunVarGeom_stepcosangle, gridGeom_yg0, gridGeom_yg0, coslatsq, zmax);\n"
             "} while (r == 1);\n"
             
             "if (r == 2)\n"
@@ -1319,6 +1319,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
 
                         "__global float *min_max,\n"
                         "unsigned int partNum,\n"
+                        "const float zmax,\n"
                         "__local float *reduce_s)\n"
 "{\n"
     "unsigned int gid = get_global_id(0)+partNum*get_global_size(0);\n"
@@ -1426,7 +1427,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                                   "sunVarGeom_tanSolarAltitude, sunVarGeom_sunAzimuthAngle,\n"
                                   "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_longit_l,\n"
                                   "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
-                                  "gridGeom_xg0, gridGeom_yg0, coslatsq);\n"
+                                  "gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
         
             "if (lum > 0.0f)\n"
                 "lumcl[gid] = degrees(asin(lum));\n"
@@ -1465,7 +1466,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                         "sunVarGeom_tanSolarAltitude, sunVarGeom_sunAzimuthAngle,\n"
                         "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_longit_l,\n"
                         "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
-                        "gridGeom_xg0, gridGeom_yg0, coslatsq);\n"
+                        "gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
         
                 "if (sunVarGeom_solarAltitude > 0.0f) {\n"
                     "float bh;\n"
@@ -1524,7 +1525,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                             "sunVarGeom_tanSolarAltitude, sunVarGeom_sunAzimuthAngle,\n"
                             "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_longit_l,\n"
                             "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
-                            "gridGeom_xg0, gridGeom_yg0, coslatsq);\n"
+                            "gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
         
                     "if (sunVarGeom_solarAltitude > 0.0f) {\n"
                         "float bh;\n"
@@ -1925,7 +1926,7 @@ cl_int calculate_core_cl(unsigned int partOff,
 	
     //Allocate and copy all the inputs
     make_hoz_mem_cl(calc, numThreads, useHorizonData(), horizonarray, &horizon_cl);
-    make_input_raster_cl(calc, xDim, yDim, 1, 1, z, &z_cl);
+    make_input_raster_cl(calc, xDim, yDim, TRUE, 1, z, &z_cl);
     make_input_raster_cl(calc, xDim, yDim, oclConst->aspin, 2, o, &o_cl);
     make_input_raster_cl(calc, xDim, yDim, oclConst->slopein, 3, s, &s_cl);
     make_input_raster_cl(calc, xDim, yDim, oclConst->linkein, 4, li, &li_cl);
@@ -1957,6 +1958,9 @@ cl_int calculate_core_cl(unsigned int partOff,
     make_output_raster_cl(calc, xDim, yDim, oclConst->diff_rad, 14, &diff_cl);
     make_output_raster_cl(calc, xDim, yDim, oclConst->refl_rad, 15, &refl_cl);
     make_min_max_cl(calc, oclConst, &min_max_cl);
+    
+    //Set the zmax value
+    handleErr(err = clSetKernelArg(calc->calcKern, 18, sizeof(float), &(oclConst->zmax)));
     
     //Do the dirty work
     run_kern(calc, calc->calcKern, numThreads, calc->calcGroupSize, NUM_OPENCL_PARTITIONS);
