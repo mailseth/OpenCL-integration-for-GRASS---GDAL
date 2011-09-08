@@ -3,10 +3,15 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
-#include <OpenCL/OpenCL.h>
 #include <grass/gis.h>
 #include <grass/gprojects.h>
 #include <grass/glocale.h>
+
+#ifdef __APPLE__
+#include <OpenCL/OpenCL.h>
+#else
+#include <CL/opencl.h>
+#endif
 
 struct OCLCalc {
 	cl_command_queue queue;

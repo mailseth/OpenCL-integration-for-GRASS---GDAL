@@ -756,13 +756,108 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
                      struct SunGeometryConstDay *sungeom,
                      struct GridGeometry *gridGeom, cl_int *clErr )
 {
-	cl_program program;
+cl_program program;
     cl_kernel kernel;
-	cl_int err = CL_SUCCESS;
+    cl_int err = CL_SUCCESS;
     char *buffer = (char *)calloc(128000, sizeof(char));
     int latin = oclConst->latin;
     int longin = oclConst->longin;
     char *useDouble = "";
+    char * assembledKernel = (char *)calloc(128000, sizeof(char));
+    
+    // Assemble the invariants as preprocessor macros (for speed). All invariants should be defined
+    // here. I'm using "%015.15lff" to format the numbers to maintain full precision
+    // it really makes a difference for some calculations.
+    sprintf(buffer, "#define invScale %015.15lff\n"
+      "#define pihalf %015.15lff\n"
+      "#define pi2 %015.15lf\n"
+      "#define deg2rad %015.15lff\n"
+      "#define invstepx %015.15lff\n"
+      "#define invstepy %015.15lff\n"
+      "#define xmin %015.15lff\n"
+      "#define ymin %015.15lff\n"
+      "#define xmax %015.15lff\n"
+      "#define ymax %015.15lff\n" 
+      "#define civilTime %015.15lff\n"
+      "#define tim %015.15lff\n"
+      "#define timeStep %015.15lff\n"
+      "#define horizonStep %015.15lff\n"
+      "#define stepx %015.15lff\n"
+      "#define stepy %015.15lff\n"
+      "#define deltx %015.15lff\n"
+      "#define delty %015.15lff\n"
+      "#define stepxy %015.15lf\n"
+      "#define horizonInterval %015.15lff\n"
+      "#define singleLinke %015.15lff\n"
+      "#define singleAlbedo %015.15lff\n"
+      "#define singleSlope %015.15lff\n"
+      "#define singleAspect %015.15lff\n"
+      "#define cbh %015.15lff\n"
+      "#define cdh %015.15lff\n"
+      "#define dist %015.15lff\n"
+      "#define TOLER %015.15lff\n"
+      "#define offsetx %015.15lff\n"
+      "#define offsety %015.15lff\n"
+      "#define declination %015.15lff\n"
+      "#define G_norm_extra %015.15lff\n"
+      "#define timeOffset %015.15lff\n"
+      "#define sindecl %015.15lff\n"
+      "#define cosdecl %015.15lff\n"
+      "#define n %d\n"
+      "#define m %d\n"
+      "#define saveMemory %d\n"
+      "#define civilTimeFlag %d\n"
+      "#define day %d\n"
+      "#define ttime %d\n"
+      "#define numPartitions %d\n"
+      "#define arrayNumInt %d\n"
+      "#define proj_eq_ll %d\n"
+      "#define someRadiation %d\n"
+      "#define numRows %d\n"
+      "#define ll_correction %d\n"
+      "#define aspin %d\n"
+      "#define slopein %d\n"
+      "#define linkein %d\n"
+      "#define albedo %d\n"
+      "#define latin %d\n"
+      "#define longin %d\n"
+      "#define coefbh %d\n"
+      "#define coefdh %d\n"
+      "#define incidout %d\n"
+      "#define beam_rad %d\n"
+      "#define insol_time %d\n"
+      "#define diff_rad %d\n"
+      "#define refl_rad %d\n"
+      "#define glob_rad %d\n"
+      "#define useShadowFlag %d\n"
+      "#define useHorizonDataFlag %d\n"
+      "#define EPS %015.15lff\n"
+      "#define HOURANGLE %015.15lff\n"
+      "#define PI %015.15lf\n"
+      "#define DEGREEINMETERS %015.15lff\n"
+      "#define UNDEFZ %015.15lff\n"
+      "#define EARTHRADIUS %015.15lff\n"
+      "#define UNDEF %015.15lff\n"
+      "#define NUM_OPENCL_PARTITIONS %d\n",
+            invScale, pihalf, pi2, deg2rad,
+            oclConst->invstepx, oclConst->invstepy, oclConst->xmin, oclConst->ymin, oclConst->xmax,
+            oclConst->ymax, oclConst->civilTime, oclConst->tim, oclConst->step, oclConst->horizonStep,
+            gridGeom->stepx, gridGeom->stepy, gridGeom->deltx, gridGeom->delty,
+            gridGeom->stepxy, getHorizonInterval(), oclConst->singleLinke,
+            oclConst->singleAlbedo, oclConst->singleSlope, oclConst->singleAspect, oclConst->cbh,
+            oclConst->cdh, oclConst->dist, oclConst->TOLER, oclConst->offsetx, oclConst->offsety,
+            oclConst->declination, sunRadVar->G_norm_extra, getTimeOffset(), sungeom->sindecl,
+            sungeom->cosdecl, oclConst->n, oclConst->m, oclConst->saveMemory, useCivilTime(),
+            oclConst->day, oclConst->ttime, oclConst->numPartitions, arrayNumInt,
+            oclConst->proj_eq_ll, oclConst->someRadiation, oclConst->numRows,
+            oclConst->ll_correction, oclConst->aspin, oclConst->slopein, oclConst->linkein, oclConst->albedo, latin,
+            longin, oclConst->coefbh, oclConst->coefdh, oclConst->incidout, oclConst->beam_rad,
+            oclConst->insol_time, oclConst->diff_rad, oclConst->refl_rad, oclConst->glob_rad,
+            useShadow(), useHorizonData(), EPS, HOURANGLE,
+            M_PI, oclConst->degreeInMeters, UNDEFZ, EARTHRADIUS, UNDEF,
+            NUM_OPENCL_PARTITIONS);
+    
+    G_verbose_message(_("OpenCL invariants: \n%s"),buffer);
     
     const char *kernFunc =
 /*
@@ -1656,8 +1751,11 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     "max_reduce_and_store(reduce_s, min_max, global_e, 21*gnum+gpid);\n"
 "}\n";
 
+    // Combine invariants (preprocessor) and kernel code here. Assembling as compiler arg string does not work on AMD systems :(
+    sprintf(assembledKernel, "%s %s", buffer, kernFunc);
+
     //Actually make the program from assembled source
-    program = clCreateProgramWithSource(context, 1, (const char**)&kernFunc,
+    program = clCreateProgramWithSource(context, 1, (const char**)&assembledKernel,
                                         NULL, &err);
     handleErrRetNULL(err);
     
@@ -1671,44 +1769,8 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
     if (ext_supported(dev, "cl_khr_fp64"))
         useDouble = "-D useDouble";
     
-    // Assemble the compiler arg string for speed. All invariants should be defined
-    // here. I'm using "%015.15lff" to format the numbers to maintain full precision
-    // it really makes a difference for some calculations.
-    sprintf(buffer, "-cl-fast-relaxed-math -cl-mad-enable -Werror "
-            "-D invScale=%015.15lff -D pihalf=%015.15lff -D pi2=%015.15lf -D deg2rad=%015.15lff "
-            "-D invstepx=%015.15lff -D invstepy=%015.15lff -D xmin=%015.15lff -D ymin=%015.15lff -D xmax=%015.15lff "
-            "-D ymax=%015.15lff -D civilTime=%015.15lff -D tim=%015.15lff -D timeStep=%015.15lff -D horizonStep=%015.15lff "
-            "-D stepx=%015.15lff -D stepy=%015.15lff -D deltx=%015.15lff -D delty=%015.15lff "
-            "-D stepxy=%015.15lf -D horizonInterval=%015.15lff -D singleLinke=%015.15lff "
-            "-D singleAlbedo=%015.15lff -D singleSlope=%015.15lff -D singleAspect=%015.15lff -D cbh=%015.15lff "
-            "-D cdh=%015.15lff -D dist=%015.15lff -D TOLER=%015.15lff -D offsetx=%015.15lff -D offsety=%015.15lff "
-            "-D declination=%015.15lff -D G_norm_extra=%015.15lff -D timeOffset=%015.15lff -D sindecl=%015.15lff "
-            "-D cosdecl=%015.15lff -D n=%d -D m=%d -D saveMemory=%d -D civilTimeFlag=%d "
-            "-D day=%d -D ttime=%d -D numPartitions=%d -D arrayNumInt=%d "
-            "-D proj_eq_ll=%d -D someRadiation=%d -D numRows=%d "
-            "-D ll_correction=%d -D aspin=%d -D slopein=%d -D linkein=%d -D albedo=%d -D latin=%d "
-            "-D longin=%d -D coefbh=%d -D coefdh=%d -D incidout=%d -D beam_rad=%d "
-            "-D insol_time=%d -D diff_rad=%d -D refl_rad=%d -D glob_rad=%d "
-            "-D useShadowFlag=%d -D useHorizonDataFlag=%d -D EPS=%015.15lff -D HOURANGLE=%015.15lff "
-            "-D PI=%015.15lf -D DEGREEINMETERS=%015.15lff -D UNDEFZ=%015.15lff -D EARTHRADIUS=%015.15lff -D UNDEF=%015.15lff "
-            "%s -D NUM_OPENCL_PARTITIONS=%d ",
-            invScale, pihalf, pi2, deg2rad,
-            oclConst->invstepx, oclConst->invstepy, oclConst->xmin, oclConst->ymin, oclConst->xmax,
-            oclConst->ymax, oclConst->civilTime, oclConst->tim, oclConst->step, oclConst->horizonStep,
-            gridGeom->stepx, gridGeom->stepy, gridGeom->deltx, gridGeom->delty,
-            gridGeom->stepxy, getHorizonInterval(), oclConst->singleLinke,
-            oclConst->singleAlbedo, oclConst->singleSlope, oclConst->singleAspect, oclConst->cbh,
-            oclConst->cdh, oclConst->dist, oclConst->TOLER, oclConst->offsetx, oclConst->offsety,
-            oclConst->declination, sunRadVar->G_norm_extra, getTimeOffset(), sungeom->sindecl,
-            sungeom->cosdecl, oclConst->n, oclConst->m, oclConst->saveMemory, useCivilTime(),
-            oclConst->day, oclConst->ttime, oclConst->numPartitions, arrayNumInt,
-            oclConst->proj_eq_ll, oclConst->someRadiation, oclConst->numRows,
-            oclConst->ll_correction, oclConst->aspin, oclConst->slopein, oclConst->linkein, oclConst->albedo, latin,
-            longin, oclConst->coefbh, oclConst->coefdh, oclConst->incidout, oclConst->beam_rad,
-            oclConst->insol_time, oclConst->diff_rad, oclConst->refl_rad, oclConst->glob_rad,
-            useShadow(), useHorizonData(), EPS, HOURANGLE,
-            M_PI, oclConst->degreeInMeters, UNDEFZ, EARTHRADIUS, UNDEF,
-            useDouble, NUM_OPENCL_PARTITIONS);
+    // set compiler args. additional define for fp64
+    sprintf(buffer, "-cl-fast-relaxed-math -cl-mad-enable %s", useDouble);
     
     (*clErr) = err = clBuildProgram(program, 1, &(dev), buffer, NULL, NULL);
     
@@ -1740,7 +1802,7 @@ cl_kernel get_kernel(cl_context context, cl_device_id dev,
             printf("CL_BUILD_IN_PROGRESS\n");
         
         //Dump the source so we have a line number reference
-        printf("Program Source:\n%s\n", kernFunc);
+        printf("Program Source:\n%s\n", assembledKernel);
         return NULL;
     }
     
