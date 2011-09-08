@@ -381,8 +381,6 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
     size_t start_time = 0, end_time;
     double tot_time = 0.0;
     size_t glob_size = get_thread_group(num_threads, group_size, num_partitions);
-    handleErr(err = clSetCommandQueueProperty(calc->queue, CL_QUEUE_PROFILING_ENABLE,
-                                              CL_TRUE, NULL));
     
     //Run the kernel on each partition
     for (i = 0; i < num_partitions; ++i) {
@@ -414,8 +412,6 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
         tot_time += (end_time-start_time)/1000000000.0;
     }
     
-    handleErr(err = clSetCommandQueueProperty(calc->queue, CL_QUEUE_PROFILING_ENABLE,
-                                              CL_FALSE, NULL));
     G_verbose_message(_("OpenCL Partitions: % 3d; Total Kernel Time:%12.4f\n"), num_partitions, tot_time);
     return CL_SUCCESS;
 }
@@ -1772,7 +1768,7 @@ struct OCLCalc *make_environ_cl(struct OCLConstants *oclConst,
                                 cl_int *clErr )
 {
     cl_int err;
-	size_t groupSize;
+    size_t groupSize;
     struct OCLCalc *calc = (struct OCLCalc *)malloc(sizeof(struct OCLCalc));
     
     calc->dev = get_device(sugDev, &err);
@@ -1782,20 +1778,21 @@ struct OCLCalc *make_environ_cl(struct OCLConstants *oclConst,
     handleErrRetNULL(err);
     
     // And also a command queue for the context
-    calc->queue = clCreateCommandQueue(calc->context, calc->dev, 0, &err);
+    // CL_QUEUE_PROFILING_ENABLE needs to be set here. clSetCommandQueueProperty is deprecated!
+    calc->queue = clCreateCommandQueue(calc->context, calc->dev, CL_QUEUE_PROFILING_ENABLE, &err);
     handleErrRetNULL(err);
     
     //Compile the kernels
-	calc->calcKern = get_kernel(calc->context, calc->dev, oclConst, "calculate",
+    calc->calcKern = get_kernel(calc->context, calc->dev, oclConst, "calculate",
                                 sunRadVar, sunGeom, gridGeom, &err);
     handleErrRetNULL(err);
     
-	calc->consKern = get_kernel(calc->context, calc->dev, oclConst, "consolidate_min_max",
+    calc->consKern = get_kernel(calc->context, calc->dev, oclConst, "consolidate_min_max",
                                 sunRadVar, sunGeom, gridGeom, &err);
     handleErrRetNULL(err);
     
     //What's the recommended group size?
-	err = clGetKernelWorkGroupInfo(calc->calcKern, calc->dev, CL_KERNEL_WORK_GROUP_SIZE,
+    err = clGetKernelWorkGroupInfo(calc->calcKern, calc->dev, CL_KERNEL_WORK_GROUP_SIZE,
                                    sizeof(size_t), &groupSize, NULL);
     handleErrRetNULL(err);
     
@@ -1815,7 +1812,7 @@ struct OCLCalc *make_environ_cl(struct OCLConstants *oclConst,
     calc->calcGroupSize = groupSize;
     
     //What's the recommended group size?
-	err = clGetKernelWorkGroupInfo(calc->consKern, calc->dev, CL_KERNEL_WORK_GROUP_SIZE,
+    err = clGetKernelWorkGroupInfo(calc->consKern, calc->dev, CL_KERNEL_WORK_GROUP_SIZE,
                                    sizeof(size_t), &groupSize, NULL);
     handleErrRetNULL(err);
     
