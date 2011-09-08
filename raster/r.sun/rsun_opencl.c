@@ -223,11 +223,21 @@ int ext_supported(cl_device_id dev, char *extName)
 cl_int printDevList()
 {
     cl_int err = CL_SUCCESS;
-	cl_device_id dev[32];
+    
+    cl_platform_id platform_id = NULL;
+    cl_uint ret_num_platforms;
+    
+    cl_device_id dev[32];
     cl_uint num_dev;
+    
     unsigned int i;
     
-    err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
+    // opencl clGetDeviceIDs needs a platform_id! NULL is no longer allowed!
+    err = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+    handleErr(err);
+    G_message(_("Found %i OpenCL platforms!"),ret_num_platforms);
+    
+    err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
     handleErr(err);
     
     G_message(_("Supported OpenCL devices:"));
@@ -264,15 +274,23 @@ cl_int printDevList()
 cl_device_id get_device(int sug_dev, cl_int *clErr)
 {
     cl_int err = CL_SUCCESS;
-	cl_device_id device = NULL;
+    
+    cl_platform_id platform_id = NULL;
+    cl_uint ret_num_platforms;
+    
+    cl_device_id device = NULL;
     size_t returned_size = 0;
     cl_char vendor_name[1024] = {0};
     cl_char device_name[1024] = {0};
-	cl_device_id dev[32];
+    cl_device_id dev[32];
     cl_uint num_dev;
     
+    // opencl clGetDeviceIDs needs a platform_id! NULL is no longer allowed!
+    err = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+    handleErr(err);
+    
     if (sug_dev >= 0 && sug_dev < 32) {
-        err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
+        err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
         handleErrRetNULL(err);
         if (num_dev > sug_dev) {
             device = dev[sug_dev];
@@ -286,10 +304,10 @@ cl_device_id get_device(int sug_dev, cl_int *clErr)
         
         // Find the GPU CL device, this is what we really want
         // If there is no GPU device is CL capable, fall back to CPU
-        err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+        err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
         if (err != CL_SUCCESS) {
             // Find the CPU CL device, as a fallback
-            err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
+            err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
             handleErrRetNULL(err);
         }
     }
