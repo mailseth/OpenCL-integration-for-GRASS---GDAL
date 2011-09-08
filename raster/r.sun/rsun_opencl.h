@@ -72,7 +72,7 @@ struct OCLConstants {
 	int refl_rad;
 	int glob_rad;
     double degreeInMeters;
-    double zmax;
+    float zmax;
     
     float linke_max, linke_min;
     float albedo_max, albedo_min;
