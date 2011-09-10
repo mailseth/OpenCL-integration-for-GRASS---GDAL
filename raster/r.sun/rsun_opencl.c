@@ -420,8 +420,8 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
  Transform all points from source to lat/long floats. This is useful
  because then we don't have to do the transform inside the OpenCL code.
  */
-void do_all_transform(struct OCLConstants *oclConst, unsigned int partOff,
-                      float **latitudeArray, float **longitudeArray,
+void do_ll_transform(struct OCLConstants *oclConst, unsigned int partOff,
+                      float ***latitudeArray, float ***longitudeArray,
                       int *latMalloc, int *lonMalloc,
                       double stepx, double stepy ){
     double *xCoords, *yCoords, *hCoords;
@@ -430,17 +430,17 @@ void do_all_transform(struct OCLConstants *oclConst, unsigned int partOff,
     int yDim = oclConst->numRows;
     
     //Alloc space, if needed, for the lat/long arrays
-    if (latitudeArray == NULL) {
-        latitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
+    if ((*latitudeArray) == NULL) {
+        (*latitudeArray) = (float **)G_malloc(sizeof(float *) * yDim);
         for (k = 0; k < yDim; ++k)
-            latitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
+            (*latitudeArray)[k] = (float *)G_malloc(sizeof(float) * xDim);
         *latMalloc = TRUE;
     }
     
-    if (longitudeArray == NULL) {
-        longitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
+    if ((*longitudeArray) == NULL) {
+        (*longitudeArray) = (float **)G_malloc(sizeof(float *) * yDim);
         for (k = 0; k < yDim; ++k)
-            longitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
+            (*longitudeArray)[k] = (float *)G_malloc(sizeof(float) * xDim);
         *lonMalloc = TRUE;
     }
     
@@ -466,8 +466,8 @@ void do_all_transform(struct OCLConstants *oclConst, unsigned int partOff,
         
         //Read them from doubles into floats
         for (j = 0; j < xDim; ++j) {
-            longitudeArray[k][j] = xCoords[j];
-            latitudeArray[k][j]  = yCoords[j];
+            (*longitudeArray)[k][j] = xCoords[j];
+            (*latitudeArray)[k][j]  = yCoords[j];
         }
     }
     
@@ -2027,8 +2027,8 @@ cl_int calculate_core_cl(unsigned int partOff,
 	//Construct the lat/long array if needed
 	if (!oclConst->proj_eq_ll && (!oclConst->latin || !oclConst->longin)) {
         // Build a transformed lat/lon array
-        do_all_transform(oclConst, partOff, latitudeArray, longitudeArray,
-                         &latMalloc, &lonMalloc, gridGeom->stepx, gridGeom->stepy );
+        do_ll_transform(oclConst, partOff, &latitudeArray, &longitudeArray,
+                        &latMalloc, &lonMalloc, gridGeom->stepx, gridGeom->stepy );
 		// Update the 'constants'
 		oclConst->latin = oclConst->longin = TRUE;
 	}
