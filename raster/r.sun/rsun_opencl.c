@@ -1,7 +1,7 @@
 /*******************************************************************************
  r.sun: rsun_opencl.c. This is the OpenCL implimentation of r.sun. It was
  written by Seth Price in 2010 for the Google Summer of Code.
- (C) 2010 Copyright Seth Price
+ (C) 2011 Copyright Seth Price
  email: seth@pricepages.org
  *******************************************************************************/
 /*
@@ -414,6 +414,67 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
     
     G_verbose_message(_("OpenCL Partitions: % 3d; Total Kernel Time:%12.4f\n"), num_partitions, tot_time);
     return CL_SUCCESS;
+}
+
+/*
+ Transform all points from source to lat/long floats. This is useful
+ because then we don't have to do the transform inside the OpenCL code.
+ */
+void do_all_transform(struct OCLConstants *oclConst, unsigned int partOff,
+                      float **latitudeArray, float **longitudeArray,
+                      int *latMalloc, int *lonMalloc,
+                      double stepx, double stepy ){
+    double *xCoords, *yCoords, *hCoords;
+    int k;
+    int xDim = oclConst->n;
+    int yDim = oclConst->numRows;
+    
+    //Alloc space, if needed, for the lat/long arrays
+    if (latitudeArray == NULL) {
+        latitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
+        for (k = 0; k < yDim; ++k)
+            latitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
+        *latMalloc = TRUE;
+    }
+    
+    if (longitudeArray == NULL) {
+        longitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
+        for (k = 0; k < yDim; ++k)
+            longitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
+        *lonMalloc = TRUE;
+    }
+    
+    //Alloc more space to pass to the transformer
+    //The transformer uses double precision, but we want floats
+    xCoords = (double *)G_malloc(sizeof(double) * xDim);
+    yCoords = (double *)G_malloc(sizeof(double) * xDim);
+    hCoords = (double *)G_malloc(sizeof(double) * xDim);
+    
+    for (k = 0; k < yDim; ++k) {
+        int j;
+        double yCoord = oclConst->ymin + (partOff+k) * stepy;
+        
+        //Set the source coords
+        for (j = 0; j < xDim; ++j) {
+            xCoords[j] = oclConst->xmin + j * stepx;
+            yCoords[j] = yCoord;
+        }
+        
+        //Do the conversion for the row
+        if (pj_do_transform(xDim, xCoords, yCoords, hCoords, &iproj, &oproj) < 0)
+            G_fatal_error(_("Error in pj_do_transform"));
+        
+        //Read them from doubles into floats
+        for (j = 0; j < xDim; ++j) {
+            longitudeArray[k][j] = xCoords[j];
+            latitudeArray[k][j]  = yCoords[j];
+        }
+    }
+    
+    //Free our transformer double space
+    G_free(xCoords);
+    G_free(yCoords);
+    G_free(hCoords);
 }
 
 /*
@@ -1077,10 +1138,10 @@ cl_program program;
              "const float sunGeom_lum_C31,\n"
              "const float sunGeom_lum_C33,\n"
              "const float sunGeom_timeAngle,\n"
-             "const float latitude,\n"
-             "const float longitude)\n"
+             "const float latitude)\n"
 "{\n"
-    "float costimeAngle = cos(sunGeom_timeAngle);\n"
+    "float costimeAngle, sintimeAngle;\n"
+    "sintimeAngle = sincos(sunGeom_timeAngle, &costimeAngle);\n"
     
     "*sunVarGeom_sinSolarAltitude = sunGeom_lum_C31 * costimeAngle + sunGeom_lum_C33;\n"
     
@@ -1102,7 +1163,7 @@ cl_program program;
         "}\n"
     "}\n"
     
-    "float lum_Lx = -sunGeom_lum_C22 * sin(sunGeom_timeAngle);\n"
+    "float lum_Lx = -sunGeom_lum_C22 * sintimeAngle;\n"
     "float lum_Ly = sunGeom_lum_C11 * costimeAngle + sunGeom_lum_C13;\n"
     
     // vertical angle of the sun
@@ -1119,8 +1180,22 @@ cl_program program;
     "else\n"
         "*sunVarGeom_sunAzimuthAngle = 2.5 * PI - *sunVarGeom_solarAzimuth;\n"
     
-    "*sunVarGeom_stepsinangle = stepxy * sin(*sunVarGeom_sunAzimuthAngle);\n"
-    "*sunVarGeom_stepcosangle = stepxy * cos(*sunVarGeom_sunAzimuthAngle);\n"
+    "float inputAngle = *sunVarGeom_sunAzimuthAngle + pihalf;\n"
+    "inputAngle = (inputAngle >= pi2) ? inputAngle - pi2 : inputAngle;\n"
+    "float cosinputAngle, sininputAngle, cosLat;\n"
+    "sintimeAngle = sincos(inputAngle, &cosinputAngle);\n"
+    "cosLat = cos(latitude);\n"
+    
+    /* 1852m * 60 * 0.0001rad * 180/pi= 636.67m */
+    "float delt_lat = -0.0001f * cosinputAngle;\n"  /* Arbitrary small distance in latitude */
+    "float delt_lon = 0.0001f * sininputAngle / cosLat;\n"
+
+    "float delt_lat_m = delt_lat * (180.0f/PI) * 1852.0f*60.0f;\n"
+    "float delt_lon_m = delt_lon * (180.0f/PI) * 1852.0f*60.0f * cosLat;\n"
+    "float delt_dist = sqrt(delt_lat_m * delt_lat_m  +  delt_lon_m * delt_lon_m);\n"
+
+    "*sunVarGeom_stepsinangle = stepxy * delt_lat_m / delt_dist;\n"
+    "*sunVarGeom_stepcosangle = stepxy * delt_lon_m / delt_dist;\n"
     
     "return;\n"
 "}\n"
@@ -1526,7 +1601,7 @@ cl_program program;
                     "&sunVarGeom_stepsinangle, &sunVarGeom_stepcosangle,\n"
                     "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
                     "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
-                    "latitude, longitude);\n"
+                    "latitude);\n"
         
             "float lum = lumcline2(horizonArr, z,\n"
                                   "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
@@ -1564,7 +1639,7 @@ cl_program program;
                     "&sunVarGeom_stepsinangle, &sunVarGeom_stepcosangle,\n"
                     "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
                     "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
-                    "latitude, longitude);\n"
+                    "latitude);\n"
 
             "if (ttime) {\n"		//irradiance
     
@@ -1626,7 +1701,7 @@ cl_program program;
                             "&sunVarGeom_stepsinangle, &sunVarGeom_stepcosangle,\n"
                             "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
                             "sunGeom_lum_C31, sunGeom_lum_C33, sunGeom_timeAngle,\n"
-                            "latitude, longitude);\n"
+                            "latitude);\n"
         
                     "float s0 = lumcline2(horizonArr, z,\n"
                             "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
@@ -1951,56 +2026,10 @@ cl_int calculate_core_cl(unsigned int partOff,
 	
 	//Construct the lat/long array if needed
 	if (!oclConst->proj_eq_ll && (!oclConst->latin || !oclConst->longin)) {
-		double *xCoords, *yCoords, *hCoords;
-		
-		//Alloc space, if needed, for the lat/long arrays
-		if (latitudeArray == NULL) {
-			latitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
-			for (k = 0; k < yDim; ++k)
-				latitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
-            latMalloc = TRUE;
-		}
-		
-		if (longitudeArray == NULL) {
-			longitudeArray = (float **)G_malloc(sizeof(float *) * yDim);
-			for (k = 0; k < yDim; ++k)
-				longitudeArray[k] = (float *)G_malloc(sizeof(float) * xDim);
-            lonMalloc = TRUE;
-        }
-		
-		//Alloc more space to pass to the transformer
-		//The transformer uses double precision, but we want floats
-		xCoords = (double *)G_malloc(sizeof(double) * xDim);
-		yCoords = (double *)G_malloc(sizeof(double) * xDim);
-		hCoords = (double *)G_malloc(sizeof(double) * xDim);
-		
-		for (k = 0; k < yDim; ++k) {
-			int j;
-			double yCoord = oclConst->ymin + (partOff+k) * gridGeom->stepy;
-			
-			//Set the source coords
-			for (j = 0; j < xDim; ++j) {
-				xCoords[j] = oclConst->xmin + j * gridGeom->stepx;
-				yCoords[j] = yCoord;
-			}
-			
-			//Do the conversion for the row
-			if (pj_do_transform(xDim, xCoords, yCoords, hCoords, &iproj, &oproj) < 0)
-				G_fatal_error(_("Error in pj_do_transform"));
-			
-			//Read them from doubles into floats
-			for (j = 0; j < xDim; ++j) {
-				longitudeArray[k][j] = xCoords[j];
-				latitudeArray[k][j]  = yCoords[j];
-			}
-		}
-		
-		//Free our transformer double space
-		G_free(xCoords);
-		G_free(yCoords);
-		G_free(hCoords);
-		
-		//Update the 'constants'
+        // Build a transformed lat/lon array
+        do_all_transform(oclConst, partOff, latitudeArray, longitudeArray,
+                         &latMalloc, &lonMalloc, gridGeom->stepx, gridGeom->stepy );
+		// Update the 'constants'
 		oclConst->latin = oclConst->longin = TRUE;
 	}
 	
