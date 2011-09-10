@@ -1,12 +1,4 @@
-I recreated all changes for a full changelog. I hope i didnt miss one...
+Linux: Makefile.linux
+Mac: Makefile.mac
 
-
-Tested on OpenSUSE 11.4
- ->  works with AMD APP 2.5 on AMD Pheneom II CPU and Radeon HD4850 GPU (http://developer.amd.com/sdks/AMDAPPSDK/Pages/default.aspx)
- ->  works with Intel OpenCL SDK 1.1 on Core(TM)2 Duo P8600 CPU (http://software.intel.com/en-us/articles/opencl-sdk/)
- ->  nVidia not tested!
-
-
-shadowing mode (-s) is broken!
- ->  strange artefacts in whole day mode.
- ->  segmenation fault in single time mode.
+;)
