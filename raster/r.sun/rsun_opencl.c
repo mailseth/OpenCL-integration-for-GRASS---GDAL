@@ -235,10 +235,10 @@ cl_int printDevList()
     // opencl clGetDeviceIDs needs a platform_id! NULL is no longer allowed!
     err = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
     handleErr(err);
-    G_message(_("Found %i OpenCL platforms!"),ret_num_platforms);
     
     err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
     handleErr(err);
+    G_message(_("Found %i OpenCL platform and %i devices!"),ret_num_platforms, num_dev);
     
     G_message(_("Supported OpenCL devices:"));
     for (i = 0; i < num_dev; ++i){
@@ -287,7 +287,7 @@ cl_device_id get_device(int sug_dev, cl_int *clErr)
     
     // opencl clGetDeviceIDs needs a platform_id! NULL is no longer allowed!
     err = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
-    handleErr(err);
+    handleErrRetNULL(err);
     
     if (sug_dev >= 0 && sug_dev < 32) {
         err = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ALL, 32, dev, &num_dev);
@@ -423,7 +423,7 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
  
  Returns CL_SUCCESS on success and other CL_* errors when something goes wrong.
  */
-cl_int make_hoz_mem_cl(struct OCLCalc *calc, unsigned int numThreads,
+cl_int make_hoz_mem_cl(struct OCLCalc *calc, unsigned int numThreads, unsigned int arrayNumInt,
                        int useHoz, unsigned char *hozArr, cl_mem *horizon_cl)
 {
     cl_int err = CL_SUCCESS;
@@ -431,9 +431,10 @@ cl_int make_hoz_mem_cl(struct OCLCalc *calc, unsigned int numThreads,
     
     //Set up memory for the horizon if needed
     if (useHoz){
-        sz = sizeof(unsigned char) * numThreads;
-        assert(sz >= 0);
+        sz = sizeof(unsigned char) * numThreads * arrayNumInt;
         (*horizon_cl) = clCreateBuffer(calc->context, CL_MEM_READ_ONLY, sz, NULL, &err);
+        if (err == CL_INVALID_BUFFER_SIZE)
+            G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
         handleErr(err);
         
         err = clEnqueueWriteBuffer(calc->queue, (*horizon_cl), CL_TRUE, 0, sz,
@@ -474,11 +475,11 @@ cl_int make_input_raster_cl(struct OCLCalc *calc, unsigned int x, unsigned int y
         
         //Allocate full buffers
         unsigned int sz = sizeof(float) * numThreads;
-        assert(sz >= 0);
         (*dst_cl) = clCreateBuffer(calc->context, CL_MEM_READ_ONLY, sz, NULL, &err);
         if (err == CL_INVALID_BUFFER_SIZE)
             G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
         handleErr(err);
+        
         cl_mem src_work_cl = clCreateBuffer(calc->context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sz, NULL, &err);
         handleErr(err);
         float *src_work = (float *)clEnqueueMapBuffer(calc->queue, src_work_cl, CL_TRUE, CL_MAP_WRITE,
@@ -523,7 +524,6 @@ cl_int make_output_raster_cl(struct OCLCalc *calc, unsigned int x, unsigned int 
     if (useData) {
         //Allocate mem for writing
         size_t sz = sizeof(float) * numThreads;
-        assert(sz >= 0);
         (*out_cl) = clCreateBuffer(calc->context, CL_MEM_WRITE_ONLY, sz, NULL, &err);
         handleErr(err);
     } else {
@@ -606,7 +606,6 @@ cl_int make_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
         
     // Allocate full buffers
     size_t sz = sizeof(float) * 22 * grp_stride;
-    assert(sz >= 0);
     (*min_max_cl) = clCreateBuffer(calc->context, CL_MEM_READ_WRITE, sz, NULL, &err);
     if (err == CL_INVALID_BUFFER_SIZE)
         G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
@@ -1206,7 +1205,7 @@ cl_program program;
     "return success;\n"
 "}\n"
 
-"float lumcline2(__global float *horizonArr,\n"
+"float lumcline2(__global unsigned char *horizonArr,\n"
                 "__global float *z,\n"
                 "int *sunVarGeom_isShadow,\n"
                 "float *sunVarGeom_zp,\n"
@@ -1238,7 +1237,7 @@ cl_program program;
             "float horizPos = sunVarGeom_sunAzimuthAngle / horizonInterval;\n"
             "int lowPos = (int) horizPos;\n"
             "int highPos = lowPos + 1;\n"
-            
+    
             "if (highPos == arrayNumInt)\n"
                 "highPos = 0;\n"
             
@@ -1408,7 +1407,7 @@ cl_program program;
  Main compute code. It includes the joules2() function because almost all
  variables would have been passed into it, and it was only called once anyway.
  */
-"__kernel void calculate(__global float *horizonArr,\n"
+"__kernel void calculate(__global unsigned char *horizonArr,\n"
                         "__global float *z,\n"
                         "__global float *o,\n"
                         "__global float *s,\n"
@@ -1518,7 +1517,7 @@ cl_program program;
         "float sunVarGeom_stepsinangle, sunVarGeom_stepcosangle;\n"
         "int sunVarGeom_isShadow;\n"
         "BEST_FP sunVarGeom_sunAzimuthAngle, sunVarGeom_solarAzimuth;\n"
-
+	
         "if (incidout) {\n"
             "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                     "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
@@ -1568,6 +1567,7 @@ cl_program program;
                     "latitude, longitude);\n"
 
             "if (ttime) {\n"		//irradiance
+    
                 "float s0 = lumcline2(horizonArr, z,\n"
                         "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
                         "&gridGeom_xx0, &gridGeom_yy0, gid*arrayNumInt,\n"
@@ -1603,6 +1603,7 @@ cl_program program;
                         "refl_e = rr;\n"	// reflected rad.
                     "}\n"
                 "}\n"			// solarAltitude
+	
             "} else {\n"
                 // all-day radiation
                 "int srStepNo = sunGeom_sunrise_time / timeStep;\n"
@@ -1680,8 +1681,9 @@ cl_program program;
             "if(glob_rad)\n"
                 "globrad[gid] = beam_e + diff_e + refl_e;\n"
         "}\n"
+     
     "}\n"
-    
+	
     "int gnum = get_num_groups(0)*NUM_OPENCL_PARTITIONS;\n"
     "int gpid = get_group_id(0)+partNum*get_num_groups(0);\n"
     "int isValid = gid < gsz && sunVarGeom_z_orig != UNDEFZ;\n"
@@ -1749,6 +1751,7 @@ cl_program program;
     "max_reduce_and_store(reduce_s, min_max, refl_e, 17*gnum+gpid);\n"
     "max_reduce_and_store(reduce_s, min_max, insol_t, 19*gnum+gpid);\n"
     "max_reduce_and_store(reduce_s, min_max, global_e, 21*gnum+gpid);\n"
+    
 "}\n";
 
     // Combine invariants (preprocessor) and kernel code here. Assembling as compiler arg string does not work on AMD systems :(
@@ -2002,7 +2005,7 @@ cl_int calculate_core_cl(unsigned int partOff,
 	}
 	
     //Allocate and copy all the inputs
-    make_hoz_mem_cl(calc, numThreads, useHorizonData(), horizonarray, &horizon_cl);
+    make_hoz_mem_cl(calc, numThreads, arrayNumInt, useHorizonData(), horizonarray, &horizon_cl);
     make_input_raster_cl(calc, xDim, yDim, TRUE, 1, z, &z_cl);
     make_input_raster_cl(calc, xDim, yDim, oclConst->aspin, 2, o, &o_cl);
     make_input_raster_cl(calc, xDim, yDim, oclConst->slopein, 3, s, &s_cl);

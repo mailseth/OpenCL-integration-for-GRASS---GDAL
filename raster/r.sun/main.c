@@ -54,6 +54,8 @@
 #define DSKY      1.0
 #define DIST     "1.0"
 
+#define USE_OPENCL 1
+
 #define SCALING_FACTOR 150.
 const double invScale = 1. / SCALING_FACTOR;
 
@@ -102,8 +104,8 @@ int OUTGR(void);
 int min(int, int);
 int max(int, int);
 
-void cube(int, int);
-void (*func) (int, int);
+void cube();
+void (*func) ();
 
 void joules2(struct SunGeometryConstDay *sunGeom,
              struct SunGeometryVarDay *sunVarGeom,
@@ -246,6 +248,7 @@ int main(int argc, char *argv[])
     
     module = G_define_module();
     G_add_keyword(_("raster"));
+    G_add_keyword(_("sun energy"));
     module->label = _("Solar irradiance and irradiation model.");
     module->description =
 	_("Computes direct (beam), diffuse and reflected solar irradiation raster "
@@ -526,14 +529,14 @@ int main(int argc, char *argv[])
 	_("Use the low-memory version of the program");
     
     //Is OpenCL enabled?
-    if (1) {
-        parm.opencl_dev = G_define_option();
-        parm.opencl_dev->key = "opencl_dev";
-        parm.opencl_dev->type = TYPE_INTEGER;
-        parm.opencl_dev->required = NO;
-        parm.opencl_dev->answer = "-1";
-        parm.opencl_dev->description = _("If using OpenCL, the device number to use.");
-    }
+#ifdef USE_OPENCL
+    parm.opencl_dev = G_define_option();
+    parm.opencl_dev->key = "opencl_dev";
+    parm.opencl_dev->type = TYPE_INTEGER;
+    parm.opencl_dev->required = NO;
+    parm.opencl_dev->answer = "-1";
+    parm.opencl_dev->description = _("If using OpenCL, the device number to use.");
+#endif
     
     if (G_parser(argc, argv))
         exit(EXIT_FAILURE);
@@ -773,9 +776,11 @@ int main(int argc, char *argv[])
     if (latin != NULL && longin == NULL)
         G_fatal_error(_("Both latin and longin raster maps must be given, or neither"));
     
+#ifdef  USE_OPENCL
     if (parm.opencl_dev->answer != NULL &&
         sscanf(parm.opencl_dev->answer, "%d", &opencl_dev) != 1)
             G_fatal_error(_("Error reading OpenCL device."));
+#endif
     
     /**********end of parser - ******************************/
     
@@ -801,11 +806,11 @@ int INPUT_part(int offset, double *zmax)
     FCELL *cell3 = NULL, *cell4 = NULL, *cell5 = NULL, *cell6 = NULL, *cell7 =
 	NULL;
     FCELL *rast1 = NULL, *rast2 = NULL;
-    static FCELL **horizonbuf;
+    static FCELL **horizonbuf = NULL;
     unsigned char *horizonpointer;
     int fd1 = -1, fd2 = -1, fd3 = -1, fd4 = -1, fd5 = -1, fd6 = -1,
 	fd7 = -1, row, row_rev;
-    static int *fd_shad;
+    static int *fd_shad = NULL;
     int fr1 = -1, fr2 = -1;
     int l, i, j;
     char shad_filename[256];
@@ -918,14 +923,11 @@ int INPUT_part(int offset, double *zmax)
     }
     
     if (useHorizonData()) {
-        if (horizonarray == NULL) {
-            horizonarray =
-            (unsigned char *)G_malloc(sizeof(char) * arrayNumInt *
-                                      numRows * n);
-            
-            horizonbuf = (FCELL **) G_malloc(sizeof(FCELL *) * arrayNumInt);
-            fd_shad = (int *)G_malloc(sizeof(int) * arrayNumInt);
-        }
+        if (horizonarray == NULL)
+            horizonarray = (unsigned char *)G_malloc(sizeof(char) *
+                                                     arrayNumInt * numRows * n);
+        horizonbuf = (FCELL **) G_malloc(sizeof(FCELL *) * arrayNumInt);
+        fd_shad = (int *)G_malloc(sizeof(int) * arrayNumInt);
 
         numDigits = (int)(log10(1. * arrayNumInt)) + 1;
         sprintf(formatString, "%%s_%%0%dd", numDigits);
@@ -934,7 +936,7 @@ int INPUT_part(int offset, double *zmax)
             sprintf(shad_filename, formatString, horizon, i);
             fd_shad[i] = Rast_open_old(shad_filename, "");
         }
-        
+
         for (i = 0; i < arrayNumInt; i++) {
             for (row = m - offset - 1; row >= finalRow; row--) {
                 
@@ -1041,7 +1043,6 @@ int INPUT_part(int offset, double *zmax)
     
     Rast_close(fd1);
     G_free(cell1);
-    
     if (aspin != NULL) {
         G_free(cell2);
         Rast_close(fd2);
@@ -1078,8 +1079,8 @@ int INPUT_part(int offset, double *zmax)
     
     if (useHorizonData()) {
         for (i = 0; i < arrayNumInt; i++) {
-            Rast_close(fd_shad[i]);
             G_free(horizonbuf[i]);
+            Rast_close(fd_shad[i]);
         }
         G_free(fd_shad);
         G_free(horizonbuf);
@@ -1664,10 +1665,9 @@ void where_is_point(double *length, struct SunGeometryVarDay *sunVarGeom,
  * }
  */
 
-void cube(jmin, imin)
+void cube()
 {
 }
-
 
 /*////////////////////////////////////////////////////////////////////// */
 
@@ -1807,6 +1807,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
     struct OCLConstants *oclConst = NULL;
     int useOpenCL = TRUE;
     
+#ifdef USE_OPENCL
     if (useOpenCL) {
         cl_int err;
         oclConst = (struct OCLConstants *)G_malloc(sizeof(struct OCLConstants));
@@ -1860,6 +1861,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
         
         oclCalc = make_environ_cl(oclConst, &sunRadVar, &sunGeom, &gridGeom, sugDev, &err);
     }
+#endif
     
     for (j = 0; j < m; j++) {
         G_percent(j, m - 1, 2);
@@ -1870,6 +1872,7 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
             shadowoffset = 0;
             sunVarGeom.zmax = zmax;
             
+#ifdef USE_OPENCL
             if (useOpenCL) { // Use OpenCL?
                 oclConst->zmax = zmax;
                 
@@ -1903,7 +1906,9 @@ void calculate(double singleSlope, double singleAspect, double singleAlbedo,
                 j += numRows-1;
                 continue;
             }
+#endif
         }
+        sunVarGeom.zmax = zmax;
         
         for (i = 0; i < n; i++) {
             

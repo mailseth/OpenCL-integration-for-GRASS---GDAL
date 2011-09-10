@@ -339,7 +339,7 @@ double lumcline2(struct SunGeometryConstDay *sungeom,
 	    /* Start is due east, sungeom->timeangle = -pi/2 */
 	    /* timeoffset = sungeom->timeAngle+pihalf; */
 	    timeoffset = sunVarGeom->sunAzimuthAngle;
-
+        
 	    /*
 	       if(timeoffset<0.)
 		  timeoffset+=pi2;
@@ -363,7 +363,7 @@ double lumcline2(struct SunGeometryConstDay *sungeom,
 					* horizonpointer[highPos]);
 	    sunVarGeom->isShadow =
 		(horizonHeight > sunVarGeom->solarAltitude);
-
+        
 	    if (!sunVarGeom->isShadow) {
 		/* if (z_orig != UNDEFZ) {
 		      s = sunSlopeGeom->lum_C31_l
