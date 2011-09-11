@@ -1182,20 +1182,18 @@ cl_program program;
     
     "float inputAngle = *sunVarGeom_sunAzimuthAngle + pihalf;\n"
     "inputAngle = (inputAngle >= pi2) ? inputAngle - pi2 : inputAngle;\n"
+    
     "float cosinputAngle, sininputAngle, cosLat;\n"
     "sintimeAngle = sincos(inputAngle, &cosinputAngle);\n"
     "cosLat = cos(latitude);\n"
     
-    /* 1852m * 60 * 0.0001rad * 180/pi= 636.67m */
-    "float delt_lat = -0.0001f * cosinputAngle;\n"  /* Arbitrary small distance in latitude */
-    "float delt_lon = 0.0001f * sininputAngle / cosLat;\n"
+    /* 1852m * 60 * 0.0001rad * 180/pi= 636.67m, Arbitrary small distance in latitude */
+    "float delt_lat_m = degrees(-0.0001f * cosinputAngle) * 1852.0f*60.0f;\n"
+    "float delt_lon_m = degrees(0.0001f * sininputAngle / cosLat) * 1852.0f*60.0f * cosLat;\n"
+    "float rdelt_dist = rsqrt(delt_lat_m * delt_lat_m  +  delt_lon_m * delt_lon_m);\n"
 
-    "float delt_lat_m = delt_lat * (180.0f/PI) * 1852.0f*60.0f;\n"
-    "float delt_lon_m = delt_lon * (180.0f/PI) * 1852.0f*60.0f * cosLat;\n"
-    "float delt_dist = sqrt(delt_lat_m * delt_lat_m  +  delt_lon_m * delt_lon_m);\n"
-
-    "*sunVarGeom_stepsinangle = stepxy * delt_lat_m / delt_dist;\n"
-    "*sunVarGeom_stepcosangle = stepxy * delt_lon_m / delt_dist;\n"
+    "*sunVarGeom_stepsinangle = stepxy * delt_lat_m * rdelt_dist;\n"
+    "*sunVarGeom_stepcosangle = stepxy * delt_lon_m * rdelt_dist;\n"
     
     "return;\n"
 "}\n"
@@ -1443,8 +1441,8 @@ cl_program program;
                 "dhc * G_norm_extra * tn;\n"
     
     "if (sunSlopeGeom_aspect != UNDEF && slope != 0.0f) {\n"
-        "float cosslope = cos(slope);\n"
-        "float sinslope = sin(slope);\n"
+        "float cosslope, sinslope;\n"
+        "sinslope = sincos(slope, &cosslope);\n"
         "float sinHalfSlope = sin(0.5f * slope);\n"
         "float fg = sinslope - slope * cosslope - PI * sinHalfSlope * sinHalfSlope;\n"
         "float r_sky = (1.0f + cosslope) * 0.5f;\n"
@@ -1561,12 +1559,12 @@ cl_program program;
         "else\n"
             "sunSlopeGeom_slope = singleSlope;\n"
         
-        "float cos_u = cos(pihalf - sunSlopeGeom_slope);\n"
-        "float sin_u = sin(pihalf - sunSlopeGeom_slope);\n"
-        "float cos_v = cos(pihalf + sunSlopeGeom_aspect);\n"
-        "float sin_v = sin(pihalf + sunSlopeGeom_aspect);\n"
-        "float gridGeom_sinlat = sin(-latitude);\n"
-        "float gridGeom_coslat = cos(-latitude);\n"
+        "float cos_u, sin_u;\n"
+        "float cos_v, sin_v;\n"
+        "float gridGeom_sinlat, gridGeom_coslat;\n"
+        "sin_u = sincos(pihalf - sunSlopeGeom_slope, &cos_u);\n"
+        "sin_v = sincos(pihalf + sunSlopeGeom_aspect, &cos_v);\n"
+        "gridGeom_sinlat = sincos(-latitude, &gridGeom_coslat);\n"
         "float sunGeom_timeAngle = 0.0f;\n"
         
         "if (ttime)\n"
