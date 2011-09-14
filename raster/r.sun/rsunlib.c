@@ -1,12 +1,15 @@
-/*******************************************************************************
-r.sun: rsunlib.c. This program was writen by Jaro Hofierka in Summer 1993 and re-engineered
-in 1996-1999. In cooperation with Marcel Suri and Thomas Huld from JRC in Ispra
-a new version of r.sun was prepared using ESRA solar radiation formulas.
-See manual pages for details.
-(C) 2002 Copyright Jaro Hofierka, Gresaka 22, 085 01 Bardejov, Slovakia, 
-              and GeoModel, s.r.o., Bratislava, Slovakia
-email: hofierka@geomodel.sk, marcel.suri@jrc.it, suri@geomodel.sk
-*******************************************************************************/
+/****************************************************************************
+ r.sun: rsunlib.c. This program was writen by Jaro Hofierka in Summer 1993
+   and re-engineered in 1996-1999. In cooperation with Marcel Suri and
+   Thomas Huld from JRC in Ispra a new version of r.sun was prepared using
+   ESRA solar radiation formulas.  See the manual page for details.
+
+  (C) 2002 Copyright Jaro Hofierka, Gresaka 22, 085 01 Bardejov, Slovakia, 
+               and GeoModel, s.r.o., Bratislava, Slovakia
+  email: hofierka at geomodel.sk, marcel.suri at jrc.it, suri at geomodel.sk
+  
+  (C) 2011 by Hamish Bowman, and the GRASS Development Team
+****************************************************************************/
 /*
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -21,8 +24,7 @@ email: hofierka@geomodel.sk, marcel.suri@jrc.it, suri@geomodel.sk
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the
  *   Free Software Foundation, Inc.,
- *   59 Temple Place - Suite 330,
- *   Boston, MA  02111-1307, USA.
+ *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 /*v. 2.0 July 2002, NULL data handling, JH */
@@ -31,7 +33,6 @@ email: hofierka@geomodel.sk, marcel.suri@jrc.it, suri@geomodel.sk
 #include <stdio.h>
 #include <math.h>
 #include <grass/gis.h>
-#include <grass/gprojects.h>
 #include <grass/glocale.h>
 #include "sunradstruct.h"
 #include "local_proto.h"
@@ -139,6 +140,7 @@ void com_par_const(double longitTime, struct SunGeometryConstDay *sungeom,
 		   struct GridGeometry *gridGeom)
 {
     double pom;
+    double totOffsetTime;
 
     sungeom->lum_C11 = gridGeom->sinlat * sungeom->cosdecl;
     sungeom->lum_C13 = -gridGeom->coslat * sungeom->sindecl;
@@ -147,9 +149,10 @@ void com_par_const(double longitTime, struct SunGeometryConstDay *sungeom,
     sungeom->lum_C33 = gridGeom->sinlat * sungeom->sindecl;
 
     if (fabs(sungeom->lum_C31) >= EPS) {
+	totOffsetTime = timeOffset + longitTime;
 
 	if (useCivilTime()) {
-	    sungeom->timeAngle -= (timeOffset + longitTime) * HOURANGLE;
+	    sungeom->timeAngle -= totOffsetTime * HOURANGLE;
 	}
 	pom = -sungeom->lum_C33 / sungeom->lum_C31;
 	if (fabs(pom) <= 1) {
@@ -176,90 +179,92 @@ void com_par_const(double longitTime, struct SunGeometryConstDay *sungeom,
 
 }
 
+
+
+
+
 void com_par(struct SunGeometryConstDay *sungeom,
 	     struct SunGeometryVarDay *sunVarGeom,
 	     struct GridGeometry *gridGeom, double latitude, double longitude)
 {
-    double pom;
-
+    double pom, xpom, ypom;
     double costimeAngle;
     double lum_Lx, lum_Ly;
-
-    /*
-    double newLatitude, newLongitude;
     double inputAngle;
     double delt_lat, delt_lon;
-    double delt_east, delt_nor;
+    double delt_lat_m, delt_lon_m;
     double delt_dist;
-*/
+
+
     costimeAngle = cos(sungeom->timeAngle);
+
 
     lum_Lx = -sungeom->lum_C22 * sin(sungeom->timeAngle);
     lum_Ly = sungeom->lum_C11 * costimeAngle + sungeom->lum_C13;
     sunVarGeom->sinSolarAltitude =
-        sungeom->lum_C31 * costimeAngle + sungeom->lum_C33;
-    
+	sungeom->lum_C31 * costimeAngle + sungeom->lum_C33;
+
     if (fabs(sungeom->lum_C31) < EPS) {
-        if (fabs(sunVarGeom->sinSolarAltitude) >= EPS) {
-            if (sunVarGeom->sinSolarAltitude > 0) {
-                /* G_debug(3,"\tSun is ABOVE area during the whole day"); */
-                sungeom->sunrise_time = 0;
-                sungeom->sunset_time = 24;
-            } else {
-                sunVarGeom->solarAltitude = 0.;
-                sunVarGeom->solarAzimuth = UNDEF;
-                return;
-            }
-        } else {
-            /* G_debug(3,"\tThe Sun is ON HORIZON during the whole day"); */
-            sungeom->sunrise_time = 0;
-            sungeom->sunset_time = 24;
-        }
+	if (fabs(sunVarGeom->sinSolarAltitude) >= EPS) {
+	    if (sunVarGeom->sinSolarAltitude > 0) {
+		/* G_debug(3,"\tSun is ABOVE area during the whole day"); */
+		sungeom->sunrise_time = 0;
+		sungeom->sunset_time = 24;
+	    }
+	    else {
+		sunVarGeom->solarAltitude = 0.;
+		sunVarGeom->solarAzimuth = UNDEF;
+		return;
+	    }
+	}
+	else {
+	    /* G_debug(3,"\tThe Sun is ON HORIZON during the whole day"); */
+	    sungeom->sunrise_time = 0;
+	    sungeom->sunset_time = 24;
+	}
     }
-    
+
     sunVarGeom->solarAltitude = asin(sunVarGeom->sinSolarAltitude);	/* vertical angle of the sun */
     /* sinSolarAltitude is sin(solarAltitude) */
-    pom = sqrt(lum_Lx*lum_Lx + lum_Ly*lum_Ly);
-    
+
+    xpom = lum_Lx * lum_Lx;
+    ypom = lum_Ly * lum_Ly;
+    pom = sqrt(xpom + ypom);
+
+
     if (fabs(pom) > EPS) {
-        sunVarGeom->solarAzimuth = acos(lum_Ly / pom);	/* horiz. angle of the Sun */
-        /* solarAzimuth *= RAD; */
-        if (lum_Lx < 0)
-            sunVarGeom->solarAzimuth = pi2 - sunVarGeom->solarAzimuth;
-    } else {
-        sunVarGeom->solarAzimuth = UNDEF;
+	sunVarGeom->solarAzimuth = lum_Ly / pom;
+	sunVarGeom->solarAzimuth = acos(sunVarGeom->solarAzimuth);	/* horiz. angle of the Sun */
+	/* solarAzimuth *= RAD; */
+	if (lum_Lx < 0)
+	    sunVarGeom->solarAzimuth = pi2 - sunVarGeom->solarAzimuth;
     }
-    
+    else {
+	sunVarGeom->solarAzimuth = UNDEF;
+    }
+
+
     if (sunVarGeom->solarAzimuth < 0.5 * M_PI)
-        sunVarGeom->sunAzimuthAngle = 0.5 * M_PI - sunVarGeom->solarAzimuth;
+	sunVarGeom->sunAzimuthAngle = 0.5 * M_PI - sunVarGeom->solarAzimuth;
     else
-        sunVarGeom->sunAzimuthAngle = 2.5 * M_PI - sunVarGeom->solarAzimuth;
-    
-    /*
+	sunVarGeom->sunAzimuthAngle = 2.5 * M_PI - sunVarGeom->solarAzimuth;
+
+
     inputAngle = sunVarGeom->sunAzimuthAngle + pihalf;
     inputAngle = (inputAngle >= pi2) ? inputAngle - pi2 : inputAngle;
-    
-    delt_lat = -0.0001 * cos(inputAngle);  // Arbitrary small distance in latitude
+
+    /* 1852m * 60 * 0.0001rad * 180/pi= 636.67m */
+    delt_lat = -0.0001 * cos(inputAngle);  /* Arbitrary small distance in latitude */
     delt_lon = 0.0001 * sin(inputAngle) / cos(latitude);
 
-    newLatitude = (latitude + delt_lat) * rad2deg;
-    newLongitude = (longitude + delt_lon) * rad2deg;
+    delt_lat_m = delt_lat * (180/M_PI) * 1852*60;
+    delt_lon_m = delt_lon * (180/M_PI) * 1852*60 * cos(latitude);
+    delt_dist = sqrt(delt_lat_m * delt_lat_m  +  delt_lon_m * delt_lon_m);
 
-    if (G_projection() != PROJECTION_LL &&
-        pj_do_proj(&newLongitude, &newLatitude, &oproj, &iproj) < 0)
-	    G_fatal_error("Error in pj_do_proj");
+    sunVarGeom->stepsinangle = gridGeom->stepxy * delt_lat_m / delt_dist;
+    sunVarGeom->stepcosangle = gridGeom->stepxy * delt_lon_m / delt_dist;
 
-    delt_east = newLongitude - gridGeom->xp;
-    delt_nor = newLatitude - gridGeom->yp;
 
-    delt_dist = sqrt(delt_east * delt_east + delt_nor * delt_nor);
-
-    sunVarGeom->stepsinangle = gridGeom->stepxy * delt_nor / delt_dist;
-    sunVarGeom->stepcosangle = gridGeom->stepxy * delt_east / delt_dist;
-//*/
-
-    sunVarGeom->stepsinangle = gridGeom->stepxy * sin(sunVarGeom->sunAzimuthAngle);
-    sunVarGeom->stepcosangle = gridGeom->stepxy * cos(sunVarGeom->sunAzimuthAngle);
     sunVarGeom->tanSolarAltitude = tan(sunVarGeom->solarAltitude);
 
     return;
@@ -292,7 +297,11 @@ int searching(double *length, struct SunGeometryVarDay *sunVarGeom,
     if (succes == 1) {
 	where_is_point(length, sunVarGeom, gridGeom);
 	if (func == NULL) {
-	    gridGeom->xx0 = gridGeom->xg0;
+        /*
+         I think this can be removed. 'func' is always set before searching()
+         is called in lumcline2().
+	     */
+        gridGeom->xx0 = gridGeom->xg0;
 	    gridGeom->yy0 = gridGeom->yg0;
 	    return (3);
 	}
@@ -312,8 +321,6 @@ int searching(double *length, struct SunGeometryVarDay *sunVarGeom,
     }
     return (succes);
 }
-
-
 
 
 double lumcline2(struct SunGeometryConstDay *sungeom,
@@ -339,7 +346,7 @@ double lumcline2(struct SunGeometryConstDay *sungeom,
 	    /* Start is due east, sungeom->timeangle = -pi/2 */
 	    /* timeoffset = sungeom->timeAngle+pihalf; */
 	    timeoffset = sunVarGeom->sunAzimuthAngle;
-        
+
 	    /*
 	       if(timeoffset<0.)
 		  timeoffset+=pi2;
@@ -363,7 +370,7 @@ double lumcline2(struct SunGeometryConstDay *sungeom,
 					* horizonpointer[highPos]);
 	    sunVarGeom->isShadow =
 		(horizonHeight > sunVarGeom->solarAltitude);
-        
+
 	    if (!sunVarGeom->isShadow) {
 		/* if (z_orig != UNDEFZ) {
 		      s = sunSlopeGeom->lum_C31_l
@@ -427,9 +434,7 @@ double lumcline2(struct SunGeometryConstDay *sungeom,
 }
 
 
-/*
- Calculate the Beam Radiation
- */
+
 double brad(double sh, double *bh, struct SunGeometryVarDay *sunVarGeom,
 	    struct SunGeometryVarSlope *sunSlopeGeom,
 	    struct SolarRadVar *sunRadVar)
@@ -522,9 +527,7 @@ double brad_angle_loss(double sh, double *bh,
 }
 
 
-/*
- Calculate the Diffuse Radiation
- */
+
 double drad(double sh, double bh, double *rr,
 	    struct SunGeometryVarDay *sunVarGeom,
 	    struct SunGeometryVarSlope *sunSlopeGeom,
@@ -544,7 +547,6 @@ double drad(double sh, double bh, double *rr,
     sinslope = sin(sunSlopeGeom->slope);
 
 /* FIXME: please document all coefficients */
-    // The transmission function (Tn)
     tn = -0.015843 + locLinke * (0.030543 + 0.0003797 * locLinke);
     A1b = 0.26463 + locLinke * (-0.061581 + 0.0031408 * locLinke);
     if (A1b * tn < 0.0022)
@@ -554,7 +556,6 @@ double drad(double sh, double bh, double *rr,
     A2 = 2.04020 + locLinke * (0.018945 - 0.011161 * locLinke);
     A3 = -1.3025 + locLinke * (0.039231 + 0.0085079 * locLinke);
 
-    //Solar altitude function (fd)
     fd = A1 + A2 * locSinSolarAltitude +
 	A3 * locSinSolarAltitude * locSinSolarAltitude;
     dh = sunRadVar->cdh * sunRadVar->G_norm_extra * fd * tn;

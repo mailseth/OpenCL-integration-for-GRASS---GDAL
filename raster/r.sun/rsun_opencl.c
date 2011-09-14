@@ -826,8 +826,8 @@ cl_program program;
     char * assembledKernel = (char *)calloc(128000, sizeof(char));
     
     // Assemble the invariants as preprocessor macros (for speed). All invariants should be defined
-    // here. I'm using "%015.15lff" to format the numbers to maintain full precision
-    // it really makes a difference for some calculations.
+    // here. I'm using "%015.15lff" to format the floats to maintain full precision.
+    // It really makes a difference for some calculations.
     sprintf(buffer, "#define invScale %015.15lff\n"
       "#define pihalf %015.15lff\n"
       "#define pi2 %015.15lf\n"
@@ -916,8 +916,6 @@ cl_program program;
             useShadow(), useHorizonData(), EPS, HOURANGLE,
             M_PI, oclConst->degreeInMeters, UNDEFZ, EARTHRADIUS, UNDEF,
             NUM_OPENCL_PARTITIONS);
-    
-    G_verbose_message(_("OpenCL invariants: \n%s"),buffer);
     
     const char *kernFunc =
 /*
@@ -1184,7 +1182,7 @@ cl_program program;
     "inputAngle = (inputAngle >= pi2) ? inputAngle - pi2 : inputAngle;\n"
     
     "float cosinputAngle, sininputAngle, cosLat;\n"
-    "sintimeAngle = sincos(inputAngle, &cosinputAngle);\n"
+    "sininputAngle = sincos(inputAngle, &cosinputAngle);\n"
     "cosLat = cos(latitude);\n"
     
     /* 1852m * 60 * 0.0001rad * 180/pi= 636.67m, Arbitrary small distance in latitude */
@@ -1247,7 +1245,11 @@ cl_program program;
     
     "*gridGeom_xx0 += sunVarGeom_stepcosangle;\n"
     "*gridGeom_yy0 += sunVarGeom_stepsinangle;\n"
-    
+   /* 
+    "if (gridGeom_yg0 > 100.7 && gridGeom_yg0 < 101.3 && "
+    "gridGeom_xg0 > 100.0 && gridGeom_xg0 < 200.0)"
+    "printf(\"%5f\t%5f\t, %f %d\\n\", gridGeom_xg0, gridGeom_yg0, sunVarGeom_stepcosangle, get_global_id(0));\n"
+ */   
     "if (   ((*gridGeom_xx0 + (0.5f * stepx)) < 0.0f)\n"
         "|| ((*gridGeom_xx0 + (0.5f * stepx)) > deltx)\n"
         "|| ((*gridGeom_yy0 + (0.5f * stepy)) < 0.0f)\n"
@@ -1258,7 +1260,7 @@ cl_program program;
         "success = 1;\n"
         
         "float length = where_is_point(z, sunVarGeom_zp,\n"
-                        "*gridGeom_xx0, *gridGeom_yy0, gridGeom_xg0, gridGeom_xg0, coslatsq);\n"
+                        "*gridGeom_xx0, *gridGeom_yy0, gridGeom_xg0, gridGeom_yg0, coslatsq);\n"
         "float z2 = sunVarGeom_z_orig +\n"
                         "EARTHRADIUS * (1.0f - cos(length / EARTHRADIUS)) +\n"
                         "length * sunVarGeom_tanSolarAltitude;\n"
@@ -1327,7 +1329,7 @@ cl_program program;
             "do {\n"
                 "r = searching(z, sunVarGeom_zp, gridGeom_xx0, gridGeom_yy0, sunVarGeom_z_orig,\n"
                         "sunVarGeom_tanSolarAltitude, sunVarGeom_stepsinangle,\n"
-                        "sunVarGeom_stepcosangle, gridGeom_yg0, gridGeom_yg0, coslatsq, zmax);\n"
+                        "sunVarGeom_stepcosangle, gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
             "} while (r == 1);\n"
             
             "if (r == 2)\n"
@@ -1827,7 +1829,10 @@ cl_program program;
     
 "}\n";
 
-    // Combine invariants (preprocessor) and kernel code here. Assembling as compiler arg string does not work on AMD systems :(
+    /*
+	 Combine invariants (preprocessor) and kernel code here. Assembling
+	 as compiler arg string does not work on AMD systems :(
+	 */
     sprintf(assembledKernel, "%s %s", buffer, kernFunc);
 
     //Actually make the program from assembled source
@@ -1891,6 +1896,7 @@ cl_program program;
     handleErrRetNULL(err);
     
     free(buffer);
+    free(assembledKernel);
     return kernel;
 }
 
