@@ -394,7 +394,7 @@ cl_int run_kern(struct OCLCalc *calc, cl_kernel kern, size_t num_threads,
         handleErr(err = clEnqueueNDRangeKernel(calc->queue, kern, 1, NULL, 
                                                &glob_size, &group_size, 0, NULL, &ev));
         if (err == CL_MEM_OBJECT_ALLOCATION_FAILURE)
-            G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
+            G_fatal_error(_("Unable to allocate enough memory (run_kern(), line %d). Try increasing the number of partitions."), __LINE__);
         if (err == CL_INVALID_COMMAND_QUEUE)
             G_fatal_error(_("Kernel crashed. If this happened after the screen froze for a few seconds, "
                             "the GPU's watchdog timer may have been triggered. Try increasing "
@@ -538,7 +538,7 @@ cl_int make_input_raster_cl(struct OCLCalc *calc, unsigned int x, unsigned int y
         unsigned int sz = sizeof(float) * numThreads;
         (*dst_cl) = clCreateBuffer(calc->context, CL_MEM_READ_ONLY, sz, NULL, &err);
         if (err == CL_INVALID_BUFFER_SIZE)
-            G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
+            G_fatal_error(_("Unable to allocate enough memory (%d MB, line %d). Try increasing the number of partitions."), (int)sz/1048576, __LINE__);
         handleErr(err);
         
         cl_mem src_work_cl = clCreateBuffer(calc->context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sz, NULL, &err);
@@ -669,7 +669,7 @@ cl_int make_min_max_cl(struct OCLCalc *calc, struct OCLConstants *oclConst,
     size_t sz = sizeof(float) * 22 * grp_stride;
     (*min_max_cl) = clCreateBuffer(calc->context, CL_MEM_READ_WRITE, sz, NULL, &err);
     if (err == CL_INVALID_BUFFER_SIZE)
-        G_fatal_error(_("Unable to allocate enough memory (%d). Try increasing the number of partitions."), __LINE__);
+        G_fatal_error(_("Unable to allocate enough memory (%d MB, line %d). Try increasing the number of partitions."), (int)sz/1048576, __LINE__);
     handleErr(err);
     
     // Set it up as an argument
@@ -1125,7 +1125,6 @@ cl_program program;
              "float *sunGeom_sunset_time,\n"
              "float *sunVarGeom_solarAltitude,\n"
              "float *sunVarGeom_sinSolarAltitude,\n"
-             "float *sunVarGeom_tanSolarAltitude,\n"
              "BEST_FP *sunVarGeom_solarAzimuth,\n"
              "BEST_FP *sunVarGeom_sunAzimuthAngle,\n"
              "float *sunVarGeom_stepsinangle,\n"
@@ -1166,7 +1165,6 @@ cl_program program;
     
     // vertical angle of the sun
     "*sunVarGeom_solarAltitude = asin(*sunVarGeom_sinSolarAltitude);\n"
-    "*sunVarGeom_tanSolarAltitude = tan(*sunVarGeom_solarAltitude);\n"
     
     // horiz. angle of the Sun
     "*sunVarGeom_solarAzimuth = acos(lum_Ly * rsqrt(lum_Lx*lum_Lx + lum_Ly*lum_Ly));\n"
@@ -1245,11 +1243,7 @@ cl_program program;
     
     "*gridGeom_xx0 += sunVarGeom_stepcosangle;\n"
     "*gridGeom_yy0 += sunVarGeom_stepsinangle;\n"
-   /* 
-    "if (gridGeom_yg0 > 100.7 && gridGeom_yg0 < 101.3 && "
-    "gridGeom_xg0 > 100.0 && gridGeom_xg0 < 200.0)"
-    "printf(\"%5f\t%5f\t, %f %d\\n\", gridGeom_xg0, gridGeom_yg0, sunVarGeom_stepcosangle, get_global_id(0));\n"
- */   
+
     "if (   ((*gridGeom_xx0 + (0.5f * stepx)) < 0.0f)\n"
         "|| ((*gridGeom_xx0 + (0.5f * stepx)) > deltx)\n"
         "|| ((*gridGeom_yy0 + (0.5f * stepy)) < 0.0f)\n"
@@ -1284,23 +1278,21 @@ cl_program program;
                 "__global float *z,\n"
                 "int *sunVarGeom_isShadow,\n"
                 "float *sunVarGeom_zp,\n"
-                "float *gridGeom_xx0,\n"
-                "float *gridGeom_yy0,\n"
                 "const int horizonOff,\n"
                 "const float sunGeom_timeAngle,\n"
                 "const float sunVarGeom_z_orig,\n"
                 "const float sunVarGeom_solarAltitude,\n"
-                "const float sunVarGeom_tanSolarAltitude,\n"
                 "const BEST_FP sunVarGeom_sunAzimuthAngle,\n"
                 "const float sunVarGeom_stepsinangle,\n"
                 "const float sunVarGeom_stepcosangle,\n"
-                "const float sunSlopeGeom_longit_l,\n"
-                "const float sunSlopeGeom_lum_C31_l,\n"
-                "const float sunSlopeGeom_lum_C33_l,\n"
+                "const float sunSlopeGeom_aspect,\n"
+                "const float sunSlopeGeom_slope,\n"
+                "const float gridGeom_sinlat,\n"
+                "const float gridGeom_coslat,\n"
                 "const float gridGeom_xg0,\n"
                 "const float gridGeom_yg0,\n"
-                "const float coslatsq,\n"
-                "const float zmax)\n"
+                "const float gridGeom_yp,\n"
+                "const float zmax )\n"
 "{\n"
     "float s = 0.0f;\n"
     
@@ -1320,27 +1312,42 @@ cl_program program;
                                                 "+ (horizPos - lowPos) * horizonArr[highPos+horizonOff]);\n"
             
             "*sunVarGeom_isShadow = horizonHeight > sunVarGeom_solarAltitude;\n"
-            
-            "if (!(*sunVarGeom_isShadow))\n"
-                "s = sunSlopeGeom_lum_C31_l * cos(-sunGeom_timeAngle - sunSlopeGeom_longit_l)\n"
-                    "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
         "} else {\n"
             "int r;\n"
+            "float gridGeom_xx0 = gridGeom_xg0;\n"
+            "float gridGeom_yy0 = gridGeom_yg0;\n"
+            "float coslatsq = 0.0;\n"
+            "float sunVarGeom_tanSolarAltitude = tan(sunVarGeom_solarAltitude);\n"
+    
+            "if (ll_correction) {\n"
+                "float coslat = cos(radians(gridGeom_yp));\n"
+                "coslatsq = coslat * coslat;\n"
+            "}\n"
+    
             "do {\n"
-                "r = searching(z, sunVarGeom_zp, gridGeom_xx0, gridGeom_yy0, sunVarGeom_z_orig,\n"
+                "r = searching(z, sunVarGeom_zp, &gridGeom_xx0, &gridGeom_yy0, sunVarGeom_z_orig,\n"
                         "sunVarGeom_tanSolarAltitude, sunVarGeom_stepsinangle,\n"
                         "sunVarGeom_stepcosangle, gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
             "} while (r == 1);\n"
             
             "if (r == 2)\n"
                 "*sunVarGeom_isShadow = 1;\n"	// shadow
-            "else\n"
-                "s = sunSlopeGeom_lum_C31_l * cos(-sunGeom_timeAngle - sunSlopeGeom_longit_l)\n"
-                    "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
         "}\n"
-    "} else {\n"
+    "}\n"
+    
+    "if (!useShadowFlag || !(*sunVarGeom_isShadow)) {\n"
+        "float cos_u, sin_u;\n"
+        "float cos_v, sin_v;\n"
+        "sin_u = sincos(pihalf - sunSlopeGeom_slope, &cos_u);\n"
+        "sin_v = sincos(pihalf + sunSlopeGeom_aspect, &cos_v);\n"
+        "float sin_phi_l = -gridGeom_coslat * cos_u * sin_v + gridGeom_sinlat * sin_u;\n"
+        "float sunSlopeGeom_longit_l = atan2(-cos_u * cos_v, "
+                        "gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u);\n"
+        "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
+        "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
+        
         "s = sunSlopeGeom_lum_C31_l * cos(-sunGeom_timeAngle - sunSlopeGeom_longit_l)\n"
-            "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
+                                        "+ sunSlopeGeom_lum_C33_l;\n"	// Jenco
     "}\n"
     
     "if (s < 0.0f)\n"
@@ -1508,18 +1515,12 @@ cl_program program;
     "unsigned int gid = get_global_id(0)+partNum*get_global_size(0);\n"
     "unsigned int gsz = n*numRows;\n"
     "float longitTime = 0.0f;\n"
-    "float coslatsq;\n"
-    "float gridGeom_xx0, gridGeom_yy0, gridGeom_xg0, gridGeom_yg0;\n"
+    "float gridGeom_xg0, gridGeom_yg0;\n"
     
-    "gridGeom_xg0 = gridGeom_xx0 = stepx * (gid % m);\n"
-    "gridGeom_yg0 = gridGeom_yy0 = stepy * (gid / m);\n"
-    "float gridGeom_xp = xmin + gridGeom_xx0;\n"
-    "float gridGeom_yp = ymin + gridGeom_yy0;\n"
-    
-    "if (ll_correction) {\n"
-        "float coslat = cos(radians(gridGeom_yp));\n"
-        "coslatsq = coslat * coslat;\n"
-    "}\n"
+    "gridGeom_xg0 = stepx * (gid % m);\n"
+    "gridGeom_yg0 = stepy * (gid / m);\n"
+    "float gridGeom_xp = xmin + gridGeom_xg0;\n"
+    "float gridGeom_yp = ymin + gridGeom_yg0;\n"
     
     "float sunVarGeom_z_orig, sunVarGeom_zp;\n"
     "if (gid < gsz)\n"
@@ -1555,28 +1556,18 @@ cl_program program;
                 "sunSlopeGeom_aspect = UNDEF;\n"
         "} else\n"
             "sunSlopeGeom_aspect = singleAspect;\n"
-        
+    
         "if (slopein)\n"
             "sunSlopeGeom_slope = radians(s[gid]);\n"
         "else\n"
             "sunSlopeGeom_slope = singleSlope;\n"
         
-        "float cos_u, sin_u;\n"
-        "float cos_v, sin_v;\n"
         "float gridGeom_sinlat, gridGeom_coslat;\n"
-        "sin_u = sincos(pihalf - sunSlopeGeom_slope, &cos_u);\n"
-        "sin_v = sincos(pihalf + sunSlopeGeom_aspect, &cos_v);\n"
         "gridGeom_sinlat = sincos(-latitude, &gridGeom_coslat);\n"
         "float sunGeom_timeAngle = 0.0f;\n"
         
         "if (ttime)\n"
             "sunGeom_timeAngle = tim;\n"
-        
-        "float sin_phi_l = -gridGeom_coslat * cos_u * sin_v + gridGeom_sinlat * sin_u;\n"
-        "float sunSlopeGeom_longit_l = atan2(-cos_u * cos_v, "
-                                "gridGeom_sinlat * cos_u * sin_v + gridGeom_coslat * sin_u);\n"
-        "float sunSlopeGeom_lum_C31_l = cos(asin(sin_phi_l)) * cosdecl;\n"
-        "float sunSlopeGeom_lum_C33_l = sin_phi_l * sindecl;\n"
         
         "float sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22;\n"
         "float sunGeom_lum_C31, sunGeom_lum_C33;\n"
@@ -1588,7 +1579,6 @@ cl_program program;
                           "gridGeom_sinlat, gridGeom_coslat, longitTime);\n"
         
         "float sunVarGeom_solarAltitude, sunVarGeom_sinSolarAltitude;\n"
-        "float sunVarGeom_tanSolarAltitude;\n"
         "float sunVarGeom_stepsinangle, sunVarGeom_stepcosangle;\n"
         "int sunVarGeom_isShadow;\n"
         "BEST_FP sunVarGeom_sunAzimuthAngle, sunVarGeom_solarAzimuth;\n"
@@ -1596,7 +1586,7 @@ cl_program program;
         "if (incidout) {\n"
             "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                     "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
-                    "&sunVarGeom_tanSolarAltitude, &sunVarGeom_solarAzimuth,\n"
+                    "&sunVarGeom_solarAzimuth,\n"
                     "&sunVarGeom_sunAzimuthAngle,\n"
                     "&sunVarGeom_stepsinangle, &sunVarGeom_stepcosangle,\n"
                     "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
@@ -1605,12 +1595,12 @@ cl_program program;
         
             "float lum = lumcline2(horizonArr, z,\n"
                                   "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
-                                  "&gridGeom_xx0, &gridGeom_yy0, gid*arrayNumInt,\n"
+                                  "gid*arrayNumInt,\n"
                                   "sunGeom_timeAngle, sunVarGeom_z_orig, sunVarGeom_solarAltitude,\n"
-                                  "sunVarGeom_tanSolarAltitude, sunVarGeom_sunAzimuthAngle,\n"
-                                  "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_longit_l,\n"
-                                  "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
-                                  "gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
+                                  "sunVarGeom_sunAzimuthAngle,\n"
+                                  "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_aspect,\n"
+                                  "sunSlopeGeom_slope, gridGeom_sinlat, gridGeom_coslat,\n"
+                                  "gridGeom_xg0, gridGeom_yg0, gridGeom_yp, zmax);\n"
         
             "if (lum > 0.0f)\n"
                 "lumcl[gid] = degrees(asin(lum));\n"
@@ -1634,7 +1624,7 @@ cl_program program;
             
             "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                     "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
-                    "&sunVarGeom_tanSolarAltitude, &sunVarGeom_solarAzimuth,\n"
+                    "&sunVarGeom_solarAzimuth,\n"
                     "&sunVarGeom_sunAzimuthAngle,\n"
                     "&sunVarGeom_stepsinangle, &sunVarGeom_stepcosangle,\n"
                     "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
@@ -1645,12 +1635,12 @@ cl_program program;
     
                 "float s0 = lumcline2(horizonArr, z,\n"
                         "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
-                        "&gridGeom_xx0, &gridGeom_yy0, gid*arrayNumInt,\n"
+                        "gid*arrayNumInt,\n"
                         "sunGeom_timeAngle, sunVarGeom_z_orig, sunVarGeom_solarAltitude,\n"
-                        "sunVarGeom_tanSolarAltitude, sunVarGeom_sunAzimuthAngle,\n"
-                        "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_longit_l,\n"
-                        "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
-                        "gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
+                        "sunVarGeom_sunAzimuthAngle,\n"
+                        "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_aspect,\n"
+                        "sunSlopeGeom_slope, gridGeom_sinlat, gridGeom_coslat,\n"
+                        "gridGeom_xg0, gridGeom_yg0, gridGeom_yp, zmax);\n"
         
                 "if (sunVarGeom_solarAltitude > 0.0f) {\n"
                     "float bh;\n"
@@ -1696,7 +1686,7 @@ cl_program program;
                 "do {\n"
                     "com_par(&sunGeom_sunrise_time, &sunGeom_sunset_time,\n"
                             "&sunVarGeom_solarAltitude, &sunVarGeom_sinSolarAltitude,\n"
-                            "&sunVarGeom_tanSolarAltitude, &sunVarGeom_solarAzimuth,\n"
+                            "&sunVarGeom_solarAzimuth,\n"
                             "&sunVarGeom_sunAzimuthAngle,\n"
                             "&sunVarGeom_stepsinangle, &sunVarGeom_stepcosangle,\n"
                             "sunGeom_lum_C11, sunGeom_lum_C13, sunGeom_lum_C22,\n"
@@ -1705,12 +1695,12 @@ cl_program program;
         
                     "float s0 = lumcline2(horizonArr, z,\n"
                             "&sunVarGeom_isShadow, &sunVarGeom_zp,\n"
-                            "&gridGeom_xx0, &gridGeom_yy0, gid*arrayNumInt,\n"
+                            "gid*arrayNumInt,\n"
                             "sunGeom_timeAngle, sunVarGeom_z_orig, sunVarGeom_solarAltitude,\n"
-                            "sunVarGeom_tanSolarAltitude, sunVarGeom_sunAzimuthAngle,\n"
-                            "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_longit_l,\n"
-                            "sunSlopeGeom_lum_C31_l, sunSlopeGeom_lum_C33_l,\n"
-                            "gridGeom_xg0, gridGeom_yg0, coslatsq, zmax);\n"
+                            "sunVarGeom_sunAzimuthAngle,\n"
+                            "sunVarGeom_stepsinangle, sunVarGeom_stepcosangle, sunSlopeGeom_aspect,\n"
+                            "sunSlopeGeom_slope, gridGeom_sinlat, gridGeom_coslat,\n"
+                            "gridGeom_xg0, gridGeom_yg0, gridGeom_yp, zmax);\n"
         
                     "if (sunVarGeom_solarAltitude > 0.0f) {\n"
                         "float bh;\n"
